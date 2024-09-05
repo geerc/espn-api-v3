@@ -1,7 +1,8 @@
 '''
 TODO:
-1. Injury/bye factor within luck_index.py
-2. get_best_lineup() {analytic_utils.py)
+1. Fix expected standings
+2. Clean up code (value rankings)
+
 '''
 from langchain_core.runnables import RunnableSequence
 
