@@ -1,7 +1,5 @@
 '''
 TODO:
-1. Fix expected standings
-2. Clean up code (value rankings)
 3. Luck Index
 4. LLM Weekly reviews
 '''
