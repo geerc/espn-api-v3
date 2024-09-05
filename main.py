@@ -1,7 +1,7 @@
 '''
 TODO:
-3. Luck Index
-4. LLM Weekly reviews
+1. Give LLM more/better information
+    1. Give/instruct to browse for news articles?
 '''
 
 import playerID
