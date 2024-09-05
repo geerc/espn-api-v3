@@ -1,7 +1,5 @@
 '''
 TODO:
-1. Fix expected standings
-2. Clean up code (value rankings)
 
 '''
 from langchain_core.runnables import RunnableSequence
