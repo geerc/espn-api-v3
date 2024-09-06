@@ -344,8 +344,7 @@ def gen_ai_summary():
     # Convert to JSON format
     box_scores_json = json.dumps(box_scores_data, indent=4)
 
-    print("\nGenerating summary with LLM...")
-
+    print("\n\tGenerating summary with LLM...")
 
     # Sample JSON data (replace with your actual JSON data)
     json_data = box_scores_json
@@ -376,15 +375,8 @@ def gen_ai_summary():
         prompt_template | llm
     )
 
-    # Simulate LLM progress with progress bar
-    bar_llm = progressbar.ProgressBar(max_value=1)
-
     # Generate the newspaper-like summary
     result = llm_chain.invoke(input=box_scores_json)
-
-    # Simulate LLM generation time
-    time.sleep(2)
-    bar_llm.update(1)
 
     # return the result
     return result.content
@@ -470,3 +462,5 @@ print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center
 
 # close text file
 sys.stdout.close()
+
+print('\nDone!\n')
