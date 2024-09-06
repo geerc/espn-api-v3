@@ -104,10 +104,10 @@ def gen_power_rankings():
 
     return power_rankings_df
 
-def gen_expected_standings():
+def gen_playoff_prob():
     # Proj wins and losses for rest of season
 
-    # MONTE CARLO PLAYOFF PROBABILIIES
+    # MONTE CARLO PLAYOFF PROBABILITIES
     print('\nGenerating Monte Carlo Playoff Probabilities...')
     # number of random season's to simulate
     simulations = 100000
@@ -246,8 +246,8 @@ def gen_expected_standings():
         # print("Vals: ", playSpots)
         projections.append(playSpots)
         playSpots = []
-        print(team_names[x-1]+'\t'+str(round((stats_teams[x-1])/simulations*100.0,2))+vals)
-    print(f'Pre dataframe projections\n{projections}')
+        # print(team_names[x-1]+'\t'+str(round((stats_teams[x-1])/simulations*100.0,2))+vals)
+    # print(f'Pre dataframe projections\n{projections}')
     # Convert projections to Pandas Dataframe
     projections = pd.DataFrame(projections)
 
@@ -391,10 +391,11 @@ def gen_ai_summary():
 rankings = gen_power_rankings()
 
 # Generate Expected Standings
-if week > 5:
-    expected_standings = gen_expected_standings()
+
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
+if week > 5:
+    playoff_prob = gen_playoff_prob()
 
 # Generate Luck Index
 print('\nGenerating Luck Index...')
@@ -452,9 +453,9 @@ print(summary)
 # league.printExpectedStandings(week)
 # print(table(projectedStandings_prnt, headers='keys', tablefmt='pipe', numalign='center'))
 
-# if week >= 5:
-#     print("\n# PLAYOFF PROBABILITIES (as of week ", week, ")")
-#     print(table(projections, headers='keys', tablefmt='pipe', numalign='center'))
+if week >= 5:
+    print(f"\n## PLAYOFF PROBABILITIES (as of week {week}")
+    print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
 print("\n## LUCK INDEX")
 print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center'))
