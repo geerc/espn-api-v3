@@ -304,18 +304,15 @@ def gen_playoff_prob():
 
 
 def gen_ai_summary():
-    print("\nRetrieving and processing matchups...")
+    print("\n\tRetrieving and processing matchups...")
 
     # Retrieve all matchups for the given week
     matchups = league.box_scores(week=week)
 
-    # Create AI summary progress bar
-    bar_matchups = progressbar.ProgressBar(max_value=len(matchups))
-
     # Extract box score data
     box_scores_data = []
 
-    for i, matchup in enumerate(matchups):
+    for matchup in matchups:
         matchup_data = {
             "home_team": matchup.home_team.team_name,
             "home_score": matchup.home_score,
@@ -343,9 +340,6 @@ def gen_ai_summary():
             ]
         }
         box_scores_data.append(matchup_data)
-
-        # Update progress bar for each matchup processed
-        bar_matchups.update(i + 1)
 
     # Convert to JSON format
     box_scores_json = json.dumps(box_scores_data, indent=4)
