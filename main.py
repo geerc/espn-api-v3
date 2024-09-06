@@ -440,8 +440,8 @@ sys.stdout = open(filepath, "w")
 
 # for the markdown files in blog
 print("---")
-print("title: Week", str(week), year, "Report")
-print("date: ",datetime.now().date())
+print(f"title: Week {week} {year} Report")
+print(f"date: {datetime.now().date()}")
 print(f"image: /images/{year}week{week}.jpeg")
 print("draft: true")
 print("---")
