@@ -1,2 +1,4 @@
-# Distribution / packaging
+#.gitignore
+
+# Enviornments
 .env

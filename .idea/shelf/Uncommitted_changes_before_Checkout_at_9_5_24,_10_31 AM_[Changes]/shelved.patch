@@ -1,0 +1,1245 @@
+Index: scrape_values.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from urllib.request import urlopen\nfrom bs4 import BeautifulSoup\nimport pandas as pd\nfrom progressbar import ProgressBar\nfrom tqdm import tqdm\nfrom tabulate import tabulate as table\n\npbar = ProgressBar()\n\nroot = '/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/values/week'\n\npositions = ['QB','RB','WR','TE']\n\ndef player_values(week):\n    for pos in positions:\n        url = 'https://www.fantasysp.com/trade-value-chart/nfl/{}'.format(pos)\n\n        # this is the HTML from the given URL\n        html = urlopen(url)\n\n        soup = BeautifulSoup(html, features='lxml') #features ensures runs the same on different systems\n\n        # use findALL() to get the column headers\n        soup.findAll('tr', limit=2)\n\n        # use getText()to extract the text we need into a list\n        headers = [th.getText() for th in soup.findAll('tr', limit=2)[1].findAll('th')]\n        # exclude the first column\n\n        # headers = headers[1:]\n\n        # print(headers)\n\n        # if its the first pos (qb), create blank dataframe, need to do here to get headers\n        if pos == 'QB':\n            all_pos = pd.DataFrame(columns=headers)\n\n        # avoid the first header row\n        rows = soup.findAll('tr')[1:]\n        team_stats = [[td.getText() for td in rows[i].findAll('td')]\n                for i in range(len(rows))]\n\n        # save as pandas dataframe\n        stats = pd.DataFrame(team_stats, columns=headers)\n        stats['position'] = pos\n\n        # apppend to datafraem\n        all_pos = all_pos.append(stats)\n\n\n    # drop rows that aren't part of the ratings (na ratings)\n    all_pos = all_pos[all_pos['RATING'].notna()]\n\n    # remove positions\n    all_pos['Player'] = all_pos['Player'].replace(' $', '', regex=True)\n\n\n    # change vs last week column headers\n    all_pos.rename(columns={'vs LAST WEEK':'change'}, inplace=True)\n\n    # subset columns that we need\n    all_pos = all_pos[['Player','RATING','position']]\n\n    return all_pos\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/scrape_values.py b/scrape_values.py
+--- a/scrape_values.py	(revision 221bff437993cdad716528d857a238371be66a61)
++++ b/scrape_values.py	(date 1725545457071)
+@@ -1,8 +1,12 @@
++'''
++TODO:
++1. Switch fantasy pros to Keep Trade Cut values
++'''
++
+ from urllib.request import urlopen
+ from bs4 import BeautifulSoup
+ import pandas as pd
+ from progressbar import ProgressBar
+-from tqdm import tqdm
+ from tabulate import tabulate as table
+ 
+ pbar = ProgressBar()
+Index: utils/printing_utils.py
+===================================================================
+diff --git a/utils/printing_utils.py b/utils/printing_utils.py
+deleted file mode 100644
+--- a/utils/printing_utils.py	(revision 221bff437993cdad716528d857a238371be66a61)
++++ /dev/null	(revision 221bff437993cdad716528d857a238371be66a61)
+@@ -1,132 +0,0 @@
+-from .sorting_utils import *
+-from tabulate import tabulate as table
+-
+-'''
+-**************************************************
+-*       Printing methods for League class        *
+-**************************************************
+-'''
+-
+-def printWeeklyScores(league, teamId):
+-    ''' Prints all weekly scores for a given team. '''
+-    print('  ---',league.teams[teamId].teamName,'---')
+-    for week in range(1, league.currentWeek):
+-        score = league.weeklyScore(teamId, week)
+-        print('Week ', week, ': ', round(score, 1))
+-    sum = 0
+-    for i in range(1, league.currentWeek):
+-        sum += league.teams[teamId].scores[i]
+-    avg = sum/ (league.currentWeek - 1)
+-    print('-------------------------------','\nAvg. Score:', '%.2f' % avg)
+-    return
+-
+-def printWeeklyMatchResults(league, teamId):
+-    ''' Prints all weekly match results for a given team. '''
+-    team = league.teams[teamId]
+-    print('  ---',team.teamName,'---')
+-    for week in range(1, league.currentWeek):
+-        print('Week',str(week+1),': ', end ="")
+-        print('%.2f' % team.scores[week], '-', '%.2f' % team.schedule[week].scores[week], end='')
+-        print('   vs.', team.schedule[week].owner)
+-    print('------------------------------------------------------------')
+-    print('Season Record:',str(team.wins),'-',str(team.losses),'-',str(team.ties))
+-
+-def printPowerRankings(league, week):
+-    ''' Print my power rankings in a nice table. '''
+-    powerRankings = []
+-    for teamId in range(1, league.numTeams + 1):
+-        powerRankings += [[league.teamTotalPRank(teamId, week), league.teams[teamId]]]
+-    sortedRankings = sorted(powerRankings, key=lambda x: x[0], reverse=True)
+-    powerRankingsTable = []
+-    for team in sortedRankings:
+-        powerRankingsTable += [[ team[1].teamName, team[0], team[1].owner ]]
+-    # print('\n','Week ',week)
+-    print(table( powerRankingsTable, headers = ['Team', 'Power Index', 'Owner'], floatfmt = '.2f', tablefmt='github'))
+-    return powerRankingsTable
+-
+-def printLuckIndex(league, week):
+-    ''' This function prints the index quantifying how 'lucky' a team was all season long (up to a certain week) '''
+-    lucks = []
+-    for teamId in range(1, league.numTeams + 1):
+-        luck = league.seasonLuckIndex(teamId, week)
+-        lucks.append([league.teams[teamId].teamName, round(luck, 2), league.teams[teamId].owner])
+-    lucks.sort(key = lambda x: x[1], reverse = True)
+-    # print('\nThrough Week %d\n'% (week))
+-    print(table(lucks, headers = ["Team", "Luck Index", "Owner"], tablefmt='pipe', numalign='center'))
+-    return lucks
+-
+-def printCurrentStandings(league):
+-    ''' Inputs: None
+-        Outputs: table (prints current standings)
+-        This function prints the current standings for a league.
+-        This function does NOT account for tiebreakers.
+-    '''
+-    results = []
+-    for teamId in range(1, league.numTeams + 1):
+-        wins = league.teams[teamId].wins
+-        losses = league.teams[teamId].losses
+-        ties = league.teams[teamId].ties
+-        pf = league.teams[teamId].pointsFor
+-        results += [[league.teams[teamId], wins, losses, ties, pf]]
+-    results.sort(key=lambda x: x[4], reverse=True)              # Sort first based on points for
+-    results.sort(key=lambda x: x[1], reverse=True)              # Sort second based on win total
+-    results.sort(key=lambda x: x[2], reverse=False)             # Sort third based on loss total
+-    resultsTable = []
+-    for team in results:
+-        resultsTable += [[ team[0].teamName, team[1], team[2], team[3], team[4], team[0].owner ]]
+-    print('\nWeek', league.currentWeek, '\n', table( resultsTable, headers = ['Team', 'Wins', 'Losses', 'Ties', 'Points Scored', 'Owner'], floatfmt = '.2f'), '\n\n*These standings do not account for tiesbreakers')
+-    return resultsTable
+-
+-def printExpectedStandings(league, week):
+-    ''' Inputs: week that just passed
+-        Outputs: table (prints expected standings)
+-        This function predicts the expected final standings for a league based
+-        on the power rankings through a given week.
+-        This function does NOT account for tiebreakers.
+-    '''
+-    results = []
+-    for teamId in range(1, league.numTeams + 1):
+-        wins, losses = league.expectedFinish(teamId, week)
+-        results += [[league.teams[teamId], wins, losses]]
+-    results.sort(key=lambda x: x[1], reverse=True)              # Sort first based on win total
+-    results.sort(key=lambda x: x[2], reverse=False)             # Sort second based on loss total
+-    resultsTable = []
+-    for team in results:
+-        resultsTable += [[ team[0].teamName, team[1], team[2], team[0].owner ]]
+-    # print('\nWeek', week,'\n')
+-    print(table( resultsTable, headers = ['Team', 'Wins', 'Losses', 'Owner'], floatfmt = '.2f', tablefmt='github'), '\n\n*These standings do not account for tiebreakers')
+-    return resultsTable
+-
+-def printWeeklyStats(league, week):
+-    ''' Prints weekly stat report for a league during a given week. '''
+-    last = league.numTeams
+-    statsTable = [['Most Points Scored: ', sortWeeklyScore(league, week)[1].owner],
+-                   ['Least Points Scored: ', sortWeeklyScore(league, week)[last].owner],
+-                   ['Best Possible Lineup: ', sortBestLineup(league, week)[1].owner],
+-                   ['Best Trio: ', sortBestTrio(league, week)[1].owner],
+-                   ['Worst Trio: ', sortBestTrio(league, week)[last].owner],
+-                   ['Best Lineup Setter', sortDifference(league, week)[1].owner],
+-                   ['Worst Lineup Setter', sortDifference(league, week)[last].owner],
+-                   ['---------------------','----------------'],
+-                   ['Best QBs: ', sortPositionScore(league, week, 0)[1].owner],
+-                   ['Best RBs: ', sortPositionScore(league, week, 2)[1].owner],
+-                   ['Best WRs: ', sortPositionScore(league, week, 4)[1].owner],
+-                   ['Best TEs: ', sortPositionScore(league, week, 6)[1].owner],
+-                   ['Best Flex: ', sortPositionScore(league, week, 23)[1].owner],
+-                   ['Best DST: ', sortPositionScore(league, week, 16)[1].owner],
+-                   ['Best K: ', sortPositionScore(league, week, 17)[1].owner],
+-                   ['Best Bench: ', sortBenchPoints(league, week)[1].owner],
+-                   ['---------------------','----------------'],
+-                   ['Worst QBs: ', sortPositionScore(league, week, 0)[last].owner],
+-                   ['Worst RBs: ', sortPositionScore(league, week, 2)[last].owner],
+-                   ['Worst WRs: ', sortPositionScore(league, week, 4)[last].owner],
+-                   ['Worst TEs: ', sortPositionScore(league, week, 6)[last].owner],
+-                   ['Worst Flex: ', sortPositionScore(league, week, 23)[last].owner],
+-                   ['Worst DST: ', sortPositionScore(league, week, 16)[last].owner],
+-                   ['Worst K: ', sortPositionScore(league, week, 17)[last].owner],
+-                   ['Worst Bench: ', sortBenchPoints(league, week)[last].owner]]
+-    print('\n', table(statsTable, headers = ['Week ' + str(week), '']))
+-
+-    # ['Most Injuries: ', league.sortNumOut(week)[last].owner.split(' ')[0]],
+-    # ['Least Injuries: ', league.sortNumOut(week)[0].owner.split(' ')[0]],
+-    return statsTable
+Index: app.py
+===================================================================
+diff --git a/app.py b/app.py
+deleted file mode 100644
+--- a/app.py	(revision 221bff437993cdad716528d857a238371be66a61)
++++ /dev/null	(revision 221bff437993cdad716528d857a238371be66a61)
+@@ -1,295 +0,0 @@
+-import pandas as pd
+-
+-# Get login credentials for leagues
+-login = pd.read_csv('login.csv')
+-year = 2020
+-
+-from kivy.app import App
+-from kivy.lang import Builder
+-from kivy.uix.button import Button
+-from kivy.uix.label import Label
+-from kivy.uix.dropdown import DropDown
+-from kivy.properties import ObjectProperty
+-from kivy.uix.gridlayout import GridLayout
+-from kivy.uix.textinput import TextInput
+-from kivy.uix.screenmanager import ScreenManager, Screen
+-from kivy.graphics import Color
+-from kivy.core.window import Window
+-
+-from league import League
+-from authorize import Authorize
+-from team import Team
+-from player import Player
+-
+-
+-
+-
+-class MainApp(App):
+-    
+-    def build(self):
+-        self.title = 'ESPN Fantasy Football Stats'
+-        '''
+-        screenManager = ScreenManager()
+-        
+-        Login = LoginScreen(name = 'Login Screen')
+-        screenManager.add_widget(Login)
+-        #loginScreen.add_widget(LoginDisplay)
+-        
+-        Stats = StatsScreen(name = 'Stats Screen')
+-        screenManager.add_widget(Stats)
+-        #statsScreen.add_widget(StatsDisplay)
+-        return LoginScreen()
+-        '''
+-        return LoginDisplay()
+-
+-
+-class LoginDisplay(GridLayout):
+-    
+-    def __init__(self, **kwargs):
+-        super(LoginDisplay, self).__init__(**kwargs)
+-        self.cols = 1
+-        
+-        self.login = GridLayout()               # Create login grid
+-        self.login.cols = 2                     # Login grid will have two columns (labels and text inputs)
+-        self.login.row_default_height = 30      # Login rows will have a size of 30 px
+-        self.login.row_force_default = True     # Force login rows to be 30 px
+-        
+-        # Add league id label and text box
+-        self.login.add_widget(Label(text = "League ID:"))
+-        self.leagueId = TextInput(multiline = False, write_tab = False)
+-        self.login.add_widget(self.leagueId)
+-        
+-        # Add username label and text box
+-        self.login.add_widget(Label(text = "Username (email):"))
+-        self.username = TextInput(multiline = False, write_tab = False)
+-        self.login.add_widget(self.username)
+-        
+-        # Add password label and text box
+-        passwordInput = Label(text = "Password:")
+-        self.login.add_widget(passwordInput)
+-        self.password = TextInput(multiline = False, write_tab = False, password = True, on_text_validate = self.fetch_league)
+-        self.login.add_widget(self.password)
+-        
+-        # Add pre-authenticated dropdown menu
+-        self.login.add_widget(Label(text = "Select a pre-authenticated league:"))        
+-        #dropdown = DropDown()
+-        #for user in login.id:  
+-            #btn = Button(text=user, size_hint_y=None, height=44) 
+-            #btn.bind(on_release = lambda btn: dropdown.select(btn.text))
+-            #dropdown.add_widget(btn)  
+-        #mainButton = Button(text="Select...")
+-        #mainButton.bind(on_release=dropdown.open)
+-        #dropdown.bind(on_select= lambda instance, x: setattr(mainButton, 'text', x))
+-        #dropdown.auto_dismiss = False
+-        #self.login.add_widget(dropdown)
+-        
+-        self.preauthenticated = TextInput(multiline=False, write_tab=False, on_text_validate = self.fetch_league)
+-        self.login.add_widget(self.preauthenticated)
+-        
+-        self.add_widget(self.login)             # Add login grid to the main page
+-        
+-        # Add the button to fetch the league
+-        fetchLeagueButton = Button(text="Fetch League")
+-        self.fetchLeagueButton = fetchLeagueButton
+-        self.add_widget(self.fetchLeagueButton)
+-        self.fetchLeagueButton.bind(on_release=self.fetch_league)     # When pressed, run fetch_league function
+-        
+-               
+-    def fetch_league(self, instance):
+-        # 1086064
+-        # TODO: What if league fetch fails
+-        
+-        if self.preauthenticated.text:
+-            _, username, password, league_id, swid, espn_s2 = login[login['id'] == self.preauthenticated.text].values[0]
+-            self.league = League(league_id, year, username, password, swid, espn_s2)    # Fetch league from input information            
+-        else: # self.username.text:
+-                print(self.username.text)
+-                league_id = int(self.leagueId.text)
+-                username = self.username.text
+-                password = self.password.text
+-                self.league = League(league_id, year, username, password)    # Fetch league from input information        
+-        
+-        self.fetchLeagueButton.text = "League Fetched!"
+-        
+-        self.remove_widget(self.login)                      # Remove the login information from the screen
+-        self.remove_widget(self.fetchLeagueButton)          # Remove the fetchLeagueButton
+-        
+-        # Create the league info and stats buttons widget
+-        self.infoAndStats = GridLayout()
+-        self.infoAndStats.cols = 1
+-        leagueName = Label(text = "League Name: " + self.league.settings['name'])
+-        self.infoAndStats.add_widget(leagueName)                         # Add the league name as a label to the (now) top of the screen
+-        self.add_widget(self.infoAndStats)
+-        
+-        self.add_stats()
+-        return
+-    
+-    def add_stats(self):      
+-        # Create the widget where the buttons for generating stats will be
+-        statButtons = GridLayout()
+-        statButtons.rows = 3
+-        statButtons.cols = 3
+-        
+-        # Create the printPowerRankings button
+-        self.printPowerRankingsButton = Button(text = "View Power Rankings")
+-        statButtons.add_widget(self.printPowerRankingsButton)
+-        self.printPowerRankingsButton.bind(on_release = self.printPowerRankings)
+-        
+-        # Create the printLuckIndex button
+-        self.printLuckIndexButton = Button(text = "View Luck Index")
+-        statButtons.add_widget(self.printLuckIndexButton)
+-        self.printLuckIndexButton.bind(on_release = self.printLuckIndex)
+-        
+-        # Create the printExpectedStandings button
+-        self.printExpectedStandingsButton = Button(text = "View Expected Standings")
+-        statButtons.add_widget(self.printExpectedStandingsButton)
+-        self.printExpectedStandingsButton.bind(on_release = self.printExpectedStandings)
+-        
+-        # Create the printWeeklyStats button
+-        self.printWeeklyStatsButton = Button(text = "View Weekly Awards")
+-        statButtons.add_widget(self.printWeeklyStatsButton)
+-        self.printWeeklyStatsButton.bind(on_release = self.printWeeklyStats)   
+-        
+-        # Create the printCurrentStandings button
+-        self.printCurrentStandingsButton = Button(text = "View Current Standnigs")
+-        statButtons.add_widget(self.printCurrentStandingsButton)
+-        self.printCurrentStandingsButton.bind(on_release = self.printCurrentStandings)           
+-        
+-        self.infoAndStats.add_widget(statButtons)
+-        
+-        # Create a location for stats to be stored later
+-        self.statsTable = GridLayout()
+-        self.add_widget(self.statsTable)
+-        self.statsTable.row_default_height = 20                 # Set the default height of each row to 20 px 
+-        self.statsTable.row_force_default = True
+-        return
+-        
+-    def printPowerRankings(self, instance):
+-        # Fetch the most recent power rankings for the league
+-        powerRankings = self.league.printPowerRankings(self.league.currentWeek - 1)
+-        
+-        self.statsTable.clear_widgets()                         # Clear the stats table
+-        self.statsTable.cols = 3                                # Add 3 columns
+-        self.statsTable.rows = self.league.numTeams + 1         # Create enough rows for every team plus a header  
+-        
+-        # Add headers to the power rankings table
+-        self.statsTable.add_widget(Label(text = "Team"))        
+-        self.statsTable.add_widget(Label(text = "Power Rank"))
+-        self.statsTable.add_widget(Label(text = "Owner"))
+-        
+-        # Add the power rankings for each team
+-        for i in range(self.league.numTeams):
+-            self.statsTable.add_widget(Label(text = powerRankings[i][0]))
+-            self.statsTable.add_widget(Label(text = str(round(powerRankings[i][1], 2))))
+-            self.statsTable.add_widget(Label(text = powerRankings[i][2]))        
+-        return
+-    
+-    def printLuckIndex(self, instance):
+-        # Fetch the most recent luck index for the league
+-        luckIndex = self.league.printLuckIndex(self.league.currentWeek - 1)
+-        
+-        self.statsTable.clear_widgets()                         # Clear the stats table
+-        self.statsTable.cols = 3                                # Add 3 columns
+-        self.statsTable.rows = self.league.numTeams + 1         # Create enough rows for every team plus a header  
+-        
+-        # Add headers to the luck index table
+-        self.statsTable.add_widget(Label(text = "Team"))
+-        self.statsTable.add_widget(Label(text = "Luck Index"))
+-        self.statsTable.add_widget(Label(text = "Owner"))
+-        
+-        # Add the luck index for each team
+-        for i in range(self.league.numTeams):
+-            self.statsTable.add_widget(Label(text = luckIndex[i][0]))
+-            self.statsTable.add_widget(Label(text = str(round(luckIndex[i][1], 2))))
+-            self.statsTable.add_widget(Label(text = luckIndex[i][2]))        
+-        return    
+-    
+-    def printCurrentStandings(self, instance):
+-        # Fetch the most recent standings for the league
+-        currentStandings = self.league.printCurrentStandings()
+-        
+-        self.statsTable.clear_widgets()                     # Clear the stats table
+-        self.statsTable.cols = 6                            # Add 6 columns
+-        self.statsTable.rows = self.league.numTeams + 1     # Create enough rows for every team plus a header  
+-        
+-        # Add headers to the expected standings table
+-        self.statsTable.add_widget(Label(text = "Team"))
+-        self.statsTable.add_widget(Label(text = "Wins"))
+-        self.statsTable.add_widget(Label(text = "Losses"))
+-        self.statsTable.add_widget(Label(text = "Ties"))
+-        self.statsTable.add_widget(Label(text = "Points Scored"))
+-        self.statsTable.add_widget(Label(text = "Owner"))
+-        
+-        # Add the current standings for each team
+-        for i in range(self.league.numTeams):
+-            self.statsTable.add_widget(Label(text = currentStandings[i][0]))
+-            self.statsTable.add_widget(Label(text = str(currentStandings[i][1])))
+-            self.statsTable.add_widget(Label(text = str(currentStandings[i][2])))  
+-            self.statsTable.add_widget(Label(text = str(currentStandings[i][3])))
+-            self.statsTable.add_widget(Label(text = str(round(currentStandings[i][4], 2))))
+-            self.statsTable.add_widget(Label(text = currentStandings[i][5]))
+-        return        
+-    
+-    
+-    def printExpectedStandings(self, instance):
+-        # Fetch the most recent expected standings for the league
+-        expectedStandings = self.league.printExpectedStandings(self.league.currentWeek - 1)
+-        
+-        self.statsTable.clear_widgets()                     # Clear the stats table
+-        self.statsTable.cols = 5                            # Add 5 columns
+-        self.statsTable.rows = self.league.numTeams + 1     # Create enough rows for every team plus a header  
+-        
+-        # Add headers to the expected standings table
+-        self.statsTable.add_widget(Label(text = "Team"))
+-        self.statsTable.add_widget(Label(text = "Wins"))
+-        self.statsTable.add_widget(Label(text = "Losses"))
+-        self.statsTable.add_widget(Label(text = "Ties"))
+-        self.statsTable.add_widget(Label(text = "Owner"))
+-        
+-        # Add the expected standings for each team
+-        for i in range(self.league.numTeams):
+-            self.statsTable.add_widget(Label(text = expectedStandings[i][0]))
+-            self.statsTable.add_widget(Label(text = str(expectedStandings[i][1])))
+-            self.statsTable.add_widget(Label(text = str(expectedStandings[i][2])))  
+-            self.statsTable.add_widget(Label(text = str(expectedStandings[i][3])))
+-            self.statsTable.add_widget(Label(text = expectedStandings[i][4]))
+-        return        
+-
+-    def printWeeklyStats(self, instance):
+-        # Fetch the most recent weekly stats for the league
+-        weeklyStats = self.league.printWeeklyStats(self.league.currentWeek - 1)
+-        
+-        self.statsTable.clear_widgets()                     # Clear the stats table
+-        self.statsTable.cols = 5                            # Add 5 columns
+-        self.statsTable.rows = 20                           # Create enough rows for every team plus a header  
+-        self.statsTable.do_scroll_y = True
+-              
+-        # Add the weekly stats for each team
+-        self.statsTable.add_widget(Label(text = weeklyStats[0][0]))  
+-        self.statsTable.add_widget(Label(text = str(weeklyStats[0][1])))
+-        self.statsTable.add_widget(Label(text = "|")) 
+-        self.statsTable.add_widget(Label(text = weeklyStats[1][0]))  
+-        self.statsTable.add_widget(Label(text = str(weeklyStats[1][1])))
+-        self.statsTable.add_widget(Label(text = weeklyStats[2][0]))  
+-        self.statsTable.add_widget(Label(text = str(weeklyStats[2][1])))  
+-        self.statsTable.add_widget(Label(text = "|")) 
+-        self.statsTable.add_widget(Label(text = "----------------"))
+-        self.statsTable.add_widget(Label(text = "----------------"))
+-        
+-        for i in [3, 5]:
+-            self.statsTable.add_widget(Label(text = weeklyStats[i][0]))  
+-            self.statsTable.add_widget(Label(text = str(weeklyStats[i][1])))
+-            self.statsTable.add_widget(Label(text = "|")) 
+-            self.statsTable.add_widget(Label(text = weeklyStats[i + 1][0]))  
+-            self.statsTable.add_widget(Label(text = str(weeklyStats[i + 1][1])))            
+-        
+-        for i in range(8, 16):
+-            self.statsTable.add_widget(Label(text = weeklyStats[i][0]))
+-            self.statsTable.add_widget(Label(text = str(weeklyStats[i][1])))
+-            self.statsTable.add_widget(Label(text = "|"))  
+-            self.statsTable.add_widget(Label(text = weeklyStats[i + 9][0])) 
+-            self.statsTable.add_widget(Label(text = str(weeklyStats[i + 9][1])))          
+-        return        
+-
+-app = MainApp()
+-app.run()
+\ No newline at end of file
+Index: utils/sorting_utils.py
+===================================================================
+diff --git a/utils/sorting_utils.py b/utils/sorting_utils.py
+deleted file mode 100644
+--- a/utils/sorting_utils.py	(revision 221bff437993cdad716528d857a238371be66a61)
++++ /dev/null	(revision 221bff437993cdad716528d857a238371be66a61)
+@@ -1,86 +0,0 @@
+-''' 
+-**************************************************
+-*    Stat sortitng methods for League class      *
+-************************************************** 
+-'''  
+-
+-def sortWeeklyScore(league, week):
+-    ''' Sorts league teams for a given week based on weekly score (highest score is first). '''
+-    teams = league.dictValuesToList(league.teams)      
+-    sortedTeams = sorted(teams, key=lambda x: x.scores[week],
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict
+-
+-
+-def sortBestLineup(league, week):
+-    ''' Sorts league teams for a given week based on best possible lineup (highest score is first). '''
+-    teams = league.dictValuesToList(league.teams)      
+-    sortedTeams = sorted(teams, key=lambda x: x.bestLineup(week),
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict   
+-
+-def sortOpponentScore(league, week):
+-    ''' Sorts league teams for a given week based on their opponent's score (highest opponent score is first). '''
+-    teams = league.dictValuesToList(league.teams)      
+-    sortedTeams = sorted(teams, key=lambda x: x.schedule[week].scores[week],
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict
+-
+-def sortBestTrio(league, week):
+-    ''' Sorts league teams for a given week based on their best QB/RB/Receiver trio (highest score is first). '''
+-    teams = league.dictValuesToList(league.teams)      
+-    sortedTeams = sorted(teams, key=lambda x: x.bestTrio(week),
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict
+-
+-def sortNumOut(week):
+-    ''' Sorts league teams for a given week based on the number of players who did not play (least injuries is first). '''
+-    teams = league.dictValuesToList(league.teams)      
+-    sortedTeams = sorted(teams, key=lambda x: x.numOut(week),
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict
+-
+-def sortPositionScore(league, week, slotId):
+-    ''' Sorts league teams for a given week based on the average starting slotId points (highest score is first) '''  
+-    teams = league.dictValuesToList(league.teams)
+-    sortedTeams = sorted(teams, key=lambda x: x.avgStartingScore(week, slotId),
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict    
+-
+-def sortBenchPoints(league, week):
+-    ''' Sorts league teams for a given week based on the total bench points (highest score is first). '''
+-    teams = league.dictValuesToList(league.teams)
+-    sortedTeams = sorted(teams, key=lambda x: x.totalBenchPoints(week),
+-                          reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict       
+-
+-def sortDifference(league, week):
+-    ''' Sorts league teams for a given week based on the the difference between their 
+-    best possible score and their actual score (lowest difference is first). '''
+-    teams = league.dictValuesToList(league.teams)
+-    sortedTeams = sorted(teams, key=lambda x: x.scores[week] - x.bestLineup(week), reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict      
+-
+-def sortOverallRoster(league, week):
+-    ''' Sorts league teams for a given week based on total roster points (highest score is first). '''
+-    teams = league.dictValuesToList(league.teams)
+-    sortedTeams = sorted(teams, key=lambda x: (x.totalBenchPoints(week) + x.scores[week]), reverse=True)
+-    ranks = list(range(1, league.numTeams + 1))
+-    sortedTeamDict = league.listsToDict(ranks, sortedTeams)
+-    return sortedTeamDict        
+\ No newline at end of file
+Index: league.py
+===================================================================
+diff --git a/league.py b/league.py
+deleted file mode 100644
+--- a/league.py	(revision 221bff437993cdad716528d857a238371be66a61)
++++ /dev/null	(revision 221bff437993cdad716528d857a238371be66a61)
+@@ -1,397 +0,0 @@
+-from authorize import Authorize
+-from team import Team
+-from utils.building_utils import *
+-from utils.sorting_utils import *
+-from utils.printing_utils import *
+-
+-import requests
+-import numpy as np
+-import scipy as sp
+-from scipy import stats
+-from tabulate import tabulate as table
+-import matplotlib.pyplot as plt
+-
+-class League():
+-
+-    def __init__(self, league_id, year, username=None, password=None, swid=None, espn_s2=None):
+-        self.league_id = league_id
+-        self.year = year
+-        if username and password and not (swid or espn_s2):
+-            client = Authorize(username, password)
+-            self.swid = client.swid
+-            self.espn_s2 = client.espn_s2
+-        else:
+-            self.username = username
+-            self.password = password
+-            self.swid = swid
+-            self.espn_s2 = espn_s2
+-
+-        buildLeague(self)
+-        return
+-
+-
+-    def __repr__(self):
+-        """This is what is displayed when print(league) is entered """
+-        return 'League(%s, %s)' % (self.settings['name'], self.year, )
+-
+-
+-    ''' **************************************************
+-        *             Begin printing methods             *
+-        ************************************************** '''
+-
+-    def printWeeklyScores(self, teamId):
+-        printWeeklyScores(self, teamId)
+-        return
+-
+-    def printWeeklyMatchResults(self, teamId):
+-        printWeeklyMatchResults(self, teamId)
+-        return
+-
+-    def printPowerRankings(self, week):
+-        return printPowerRankings(self, week)
+-
+-    def printLuckIndex(self, week):
+-        return printLuckIndex(self, week)
+-
+-    def printCurrentStandings(self):
+-        return printCurrentStandings(self)
+-
+-    def printExpectedStandings(self, week):
+-        return printExpectedStandings(self, week)
+-
+-    def printWeeklyStats(self, week):
+-        return printWeeklyStats(self, week)
+-
+-
+-    ''' **************************************************
+-        *         Begin advanced stats methods           *
+-        ************************************************** '''
+-
+-    def weeklyScore(self, teamId, week):
+-        ''' Returns the number of points scored by a team's starting roster for a given week. '''
+-        if week <= self.currentWeek:
+-            return self.teams[teamId].scores[week]
+-        else:
+-            return None
+-
+-    def topPlayers(self, teamId, week, slotCategoryId, n):
+-        ''' Takes a list of players and returns a list of the top n players based on points scored. '''
+-        # Gather players of the desired position
+-        unsortedList = []
+-        for player in self.teams[teamId].rosters[week]:
+-            if slotCategoryId in player.eligibleSlots:
+-                unsortedList += [player]
+-
+-        # Sort players by points scored
+-        sortedList = [unsortedList[0]]
+-        for player in unsortedList[1:]:
+-            for i in range(len(sortedList)):
+-                if (player.score >= sortedList[i].score):
+-                    sortedList = sortedList[:i] + [player] + sortedList[i:]
+-                    break
+-            if player not in sortedList:
+-                sortedList += [player]
+-        return sortedList[:n]
+-
+-    def bestTrio(self, teamId, week):
+-        ''' Returns the the sum of the top QB/RB/Reciever trio for a team during a given week. '''
+-        qb = self.topPlayers(teamId, week, 0, 1)[0].score
+-        rb = self.topPlayers(teamId, week, 2, 1)[0].score
+-        wr = self.topPlayers(teamId, week, 4, 1)[0].score
+-        te = self.topPlayers(teamId, week, 6, 1)[0].score
+-        bestTrio = round(qb + rb + max(wr, te), 2)
+-        return bestTrio
+-
+-    def weeklyFinish(self, teamId, week):
+-        ''' Returns the rank of a team based on the weekly score of a team for a given week. '''
+-        team = self.teams[teamId]                           # Get the Team object associated with the input teamId
+-        teamIds = list(range(1, self.numTeams + 1))         # Get a list of teamIds
+-        teamIds.remove(team.teamId)                         # Remove the teamId of the working team from the list of teamIds
+-        weeklyFinish = 1                                    # Initialize the weeklyFinish to 1
+-        for teamId in teamIds:
+-            if (team.scores[week] != self.teams[teamId].scores[week]) and (team.scores[week] <= self.teams[teamId].scores[week]):
+-                weeklyFinish += 1;                          # Increment the weeklyFinish for every team with a higher weekly score
+-        return weeklyFinish
+-
+-    def averageWeeklyFinish(self, teamId, week):
+-        ''' This function returns the average weekly finish of a team through a certain week '''
+-        finish = 0
+-        for wk in range(1, week + 1):
+-            finish += self.weeklyFinish(teamId, wk)
+-        return finish / week
+-
+-    def averageOpponentFinish(self,  teamId, week):
+-        ''' This function returns the average weekly finish of a team's weekly opponent through a certain week '''
+-        finish = 0
+-        for wk in range(1, week + 1):
+-            finish += self.weeklyFinish(self.teams[teamId].schedule[wk].teamId, wk)
+-        return finish / week
+-
+-    def teamWeeklyPRank(self, teamId, week):
+-        ''' Returns the power rank score of a team for a certain week. '''
+-        team = self.teams[teamId]
+-
+-        # Points for score
+-        bestWeeklyScore = sortWeeklyScore(self, week)[1].scores[week]
+-        score = self.weeklyScore(teamId, week)
+-        pfScore = score / bestWeeklyScore * 70
+-
+-        '''
+-        # Team Record score (REDACTED - replaced with 'Team Weekly Finish Score')
+-        oppScore = team.schedule[week].scores[week]
+-        if score > oppScore:
+-            win = 5             # Team won this week
+-        if score == oppScore:
+-            win = 2.5           # Team tied this week
+-        else:
+-            win = 0             # Team lost this week
+-        bestScore = team.bestLineup(week)    # Best possible lineup for team
+-        oppBestScore = team.schedule[week].bestLineup(week)
+-        if bestScore > oppBestScore:
+-            luck = 10           # Team should have won if both lineups were their best
+-        elif bestScore > oppScore:
+-            luck = 5            # Team could have won if their lineup was its best
+-        else:
+-            luck = 0            # Team could not have won
+-        multiplier = 1 + (win + luck) / 200
+-        '''
+-
+-        # Team Weekly Finish Score
+-        place = self.weeklyFinish(teamId, week)
+-        if place <= self.numTeams / 2:
+-            win = 5            # Team deserved to be one of the winning teams
+-        else:
+-            win = 0             # Team didn't deserve to be one of the winning teams
+-        multiplier = 1 + (win) / 100
+-
+-        # Best lineup score
+-        bestScore = team.bestLineup(week)    # Best possible lineup for team
+-        bestBestWeeklyScore = sortBestLineup(self, week)[1].scores[week]
+-        bestLineupScore = bestScore / bestBestWeeklyScore * 20
+-
+-        '''(REDACTED)
+-        # Dominance score
+-        if score > oppScore:
+-            dominance = (score - oppScore) / score * 10
+-        else:
+-            dominance = 0
+-        '''
+-
+-        return pfScore*multiplier #+ bestLineupScore
+-
+-    def teamTotalPRank(self, teamId, week):
+-        ''' Gets overall power ranking for a team. '''
+-        if week >= self.currentWeek:
+-            week = self.currentWeek - 1
+-
+-        pRank = 0
+-        for wk in range(1, week+1):
+-            pRank += self.teamWeeklyPRank(teamId, wk)
+-        pRank += self.teamWeeklyPRank(teamId, week)*2
+-        if week > 1:
+-            pRank += self.teamWeeklyPRank(teamId, week-1)
+-            week += 1
+-        return pRank / (week + 2)
+-
+-    def weeklyLuckIndex(self, teamId, week):
+-        ''' This function returns an index quantifying how 'lucky' a team was in a given week '''
+-        team = self.teams[teamId]
+-        opp = team.schedule[week]
+-
+-        # Luck Index based on where the team and its opponent finished compared to the rest of the league
+-        result = team.weeklyResult(week)
+-        place = self.weeklyFinish(teamId, week)
+-        if result == 1:                                 # If the team won...
+-            odds = (place - 1) / (self.numTeams - 2)    # Odds of this team playing a team with a higher score than it
+-            luckIndex = 5*odds                          # The worse the team ranked, the luckier they were to have won
+-        else:                                                           # if the team lost or tied...
+-            odds = (self.numTeams - place) / (self.numTeams - 2)    # Odds of this team playing a team with a lower score than it
+-            luckIndex = -5*odds                                          # The better the team ranked, the unluckier they were to have lost or tied
+-        if result == 0.5:                               # If the team tied...
+-            luckIndex /= 2                              # They are only half as unlucky, because tying is not as bad as losing
+-
+-        # Luck Index based on how the team scored compared to its opponent
+-        teamScore = team.scores[week]
+-        avgScore = team.avgPointsFor(week)
+-        stdevScore = team.stdevPointsFor(week)
+-        if stdevScore != 0:
+-            zTeam = (teamScore - avgScore) / stdevScore     # Get z-score of the team's performance
+-            effect = zTeam/(3*stdevScore)*2                 # Noramlize the z-score so that a performance 3 std dev's away from the mean has an effect of 2 points on the luck index
+-            luckIndex += (effect / abs(effect)) * min(abs(effect), 2)   # The maximum effect is +/- 2
+-
+-        oppScore = opp.scores[week]
+-        avgOpp = opp.avgPointsAllowed(week)
+-        stdevOpp = opp.stdevPointsAllowed(week)
+-        if stdevOpp != 0:
+-            zOpp = (oppScore - avgOpp) / stdevOpp                       # Get z-score of the opponent's performance
+-            effect = zOpp/(3*stdevOpp)*2                        # Noramlize the z-score so that a performance 3 std dev's away from the mean has an effect of 2 points on the luck index
+-            luckIndex -= (effect / abs(effect)) * min(abs(effect), 2)   # The maximum effect is +/- 2
+-
+-        return luckIndex
+-
+-    def seasonLuckIndex(self, teamId, week):
+-        ''' This function returns an index quantifying how 'lucky' a team was all season long (up to a certain week) '''
+-        luckIndex = 0
+-        for week in range(1, week + 1):
+-            luckIndex += self.weeklyLuckIndex(teamId, week)
+-        return luckIndex
+-
+-    def resultsTopHalf(self, teamId, week):
+-        ''' This function returns the number of wins and losses a team would have through a certain week
+-        if a win was defined as scoring in the top half of teams for that week. I.e., in an 8 person league, the
+-        4 teams that scored the most points would be granted a win, and the other 4 teams would be granted a loss.'''
+-        wins, losses = 0, 0
+-        for wk in range(1, week + 1):
+-            place = self.weeklyFinish(teamId, wk)
+-            if place <= self.numTeams // 2:
+-                wins += 1
+-            else:
+-                losses += 1
+-        return wins, losses
+-
+-    def expectedFinish(self, teamId, week):
+-        ''' Inputs: teamId, week (that just passed)
+-            Returns: numWins, numLosses, numTies
+-            This function estimates the results of every remaining matchup for a team
+-            based on the team's and its opponent's power ranking. These results are
+-            added to the team's current matchup results.
+-        '''
+-        team = self.teams[teamId]
+-        wins = team.wins
+-        losses = team.losses
+-        # ties = team.ties
+-        pRank = self.teamTotalPRank(teamId, week)
+-        for wk in range(week + 1, self.regSeasonWeeks + 1):
+-            oppId = self.getTeamId(team.schedule[wk])
+-            oppPRank = self.teamTotalPRank(oppId, week)
+-            if pRank > oppPRank:
+-                wins += 1
+-            elif pRank < oppPRank:
+-                losses += 1
+-
+-        return wins, losses
+-
+-    def getTeamId(self, team):
+-        ''' Inputs: Team object
+-            Outputs: teamId
+-            This function finds and returns the teamId of a Team object
+-        '''
+-        for i in range(1, self.numTeams + 1):
+-            if self.teams[i] == team:
+-                return self.teams[i].teamId
+-
+-    def dictValuesToList(self, dict):
+-        ''' Takes a dictionary and creates a list containing all values. '''
+-        list = []
+-        for value in dict.values():
+-            list += [value]
+-        return list
+-
+-    def listsToDict(self, keys, vals):
+-        ''' Takes a list of keys and a list of values and creates a dictionary. '''
+-        dict = {}
+-        for i in range(len(keys)):
+-            dict[keys[i]] = vals[i]
+-        return dict
+-
+-    def getPRanksList(self, teamId, week):
+-        '''
+-        Inputs: int (teamId), int (week)
+-        Outputs: list of floats (power rank of the team for each week through week (inclusive))
+-
+-        This function takes a teamId and week as inputs and returns a list containing
+-        the team's power rank for each week up to and including the input week.
+-        '''
+-        pRanks = []
+-        for wk in range(1, week + 1):
+-            pRanks.append(self.teamTotalPRank(teamId, wk))
+-        return pRanks
+-
+-
+-    def pWin_score(self, teamId, week):
+-        '''
+-        Inputs: int (teamId), int (week of matchup)
+-        Output: float (probability that team will win)
+-
+-        This function takes in a team id and the week of the matchup and returns
+-        the probability that the team will win the matchup. This probability is
+-        caluclated by subtracting the probability distribution functions of the
+-        team's score and its opponent's score. The pdf's are assumed to follow a
+-        normal distribution for both teams.
+-        '''
+-        team = self.teams[teamId]
+-        avgScore = team.avgPointsFor(week - 1);
+-        stdScore = team.stdevPointsFor(week - 1)
+-
+-        avgOpp = team.schedule[week].avgPointsFor(week - 1)
+-        stdOpp = team.schedule[week].stdevPointsFor(week - 1)
+-
+-        return sp.stats.norm(avgScore - avgOpp, np.sqrt(stdScore**2 + stdOpp**2)).sf(0)
+-
+-    def pWin_pRank(self, teamId, week):
+-        '''
+-        Inputs: int (teamId), int (week of matchup)
+-        Output: float (probability that team will win)
+-
+-        This function takes in a team id and the week of the matchup and returns
+-        the probability that the team will win the matchup. This probability is
+-        caluclated by subtracting the probability distribution functions of the
+-        team's power rank and its opponent's power rank. The pdf's are assumed
+-        to follow a normal distribution for both teams.
+-        '''
+-        team = self.teams[teamId]
+-        pRanks = self.getPRanksList(teamId, week)
+-
+-        oppPranks = []
+-        for wk in range(1, week):
+-            oppPranks.append(self.teamTotalPRank(team.schedule[wk].teamId, wk))
+-
+-        avgScore = np.mean(pRanks)
+-        stdScore = np.std(pRanks)
+-        avgOpp = np.mean(oppPranks)
+-        stdOpp = np.std(oppPranks)
+-
+-        return sp.stats.norm(avgScore - avgOpp, np.sqrt(stdScore**2 + stdOpp**2)).sf(0)
+-
+-    def checkAccuracy(self, week, function):
+-        '''
+-        Inputs: int (week), function (to predict matchup result)
+-        Outputs: float (accuracy of model)
+-
+-        This function checks the accuracy of the input pWin function.
+-        It calls the function for every matchup that through (inclusive) the
+-        input week and compares the expected result with the actual result.
+-        The final accuracy is determined by taking the percentage of correctly
+-        prediced results.
+-        '''
+-        if week >= self.currentWeek:
+-            week = self.currentWeek - 1
+-
+-        numMatchups = 0
+-        numCorrect = 0
+-        for team in self.teams.values():
+-            for wk in range(2, week + 1):
+-                actualResult = team.weeklyResult(wk)
+-                predictedResult = round(function(team.teamId, wk), 0)
+-                if actualResult == predictedResult:
+-                    numCorrect += 1
+-                numMatchups += 1
+-        return numCorrect/2, numMatchups/2, numCorrect / numMatchups
+-
+-    def plotPRanks(self, week):
+-        if week >= self.currentWeek:
+-            week = self.currentWeek - 1
+-
+-        fig = plt.figure()
+-        graph = fig.add_subplot(1, 2, 1)
+-        wks = list(range(1, week + 1))
+-        for teamId in self.teams:
+-            pRanks = self.getPRanksList(teamId, week)
+-            plt.plot(wks, pRanks, '-', label=self.teams[teamId].teamName)
+-        plt.title("Power Rankings vs Week")
+-        plt.xlabel("Week")
+-        plt.ylabel("Power Rank")
+-        plt.legend(loc=9, bbox_to_anchor = (1.4, 1))
+-        fig.set_size_inches(10, 4)
+-        plt.hold = False
+-        return
+Index: utils/building_utils.py
+===================================================================
+diff --git a/utils/building_utils.py b/utils/building_utils.py
+deleted file mode 100644
+--- a/utils/building_utils.py	(revision 221bff437993cdad716528d857a238371be66a61)
++++ /dev/null	(revision 221bff437993cdad716528d857a238371be66a61)
+@@ -1,206 +0,0 @@
+-import requests
+-import datetime
+-
+-# Import the Team class (this is complicated because team.py is in the parent folder)
+-import os, sys
+-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+-from team import Team
+-
+-''' 
+-***********************************************************
+-*   League fetching/building methods for League class     *
+-***********************************************************
+-'''  
+-
+-def buildLeague(league):
+-    # ESPN Fantasy Football API v3 came out for seasons in 2019 and beyond. v2 is used up until 2018
+-    print('Fetching league...')
+-    if (league.year >= (datetime.datetime.now() - datetime.timedelta(180)).year):         # ESPN API v3
+-        league.url = "https://fantasy.espn.com/apis/v3/games/ffl/seasons/" + \
+-            str(league.year) + "/segments/0/leagues/" + str(league.league_id)
+-    else:                           # ESPN API v2
+-        league.url = "https://fantasy.espn.com/apis/v3/games/ffl/leagueHistory/" + \
+-            str(league.league_id) + "?seasonId=" + str(league.year)
+-    
+-    league.cookies = {'swid' : league.swid, 'espn_s2' : league.espn_s2}
+-    settings = requests.get(league.url, cookies = league.cookies, params = {'view' : 'mSettings'}).json()
+-    
+-    # Try navigating the settings tree. If an error occurs, the league is not accessible
+-    try:
+-        if league.year >= 2019:
+-            league.currentWeek = settings['scoringPeriodId']
+-            league.settings = settings['settings']
+-        else:
+-            league.currentWeek = settings[0]['scoringPeriodId']
+-            league.settings = settings[0]['settings']
+-        print('League authenticated!')
+-    except:
+-        raise Exception('ERROR: League is not accessible: swid and espn_s2 needed.')
+-    
+-    # Gather league information
+-    print('Gathering team information...')
+-    league.regSeasonWeeks = league.settings['scheduleSettings']['matchupPeriodCount']
+-    league.teamData = requests.get(league.url, cookies = league.cookies, params = {'view' : 'mTeam'}).json()
+-    print('Gathering matchup data...')
+-    league.matchupData = requests.get(league.url, cookies = league.cookies, params = {'view' : 'mMatchupScore'}).json()
+-    if league.year < 2019:
+-        league.teamData = league.teamData[0]
+-        league.matchupData = league.matchupData[0]
+-            
+-    # Build league
+-    getTeamNames(league) 
+-    getRosterSettings(league) 
+-    buildTeams(league)
+-    #getWeeklyProjections(league)
+-    print('League successfully built!')    
+-    return
+-
+-def getRosterSettings(league):
+-    ''' This grabs the roster and starting lineup settings for the league
+-            - Grabs the dictionary containing the number of players of each position a roster contains
+-            - Creates a dictionary rosterSlots{} that only inlcludes slotIds that have a non-zero number of players on the roster
+-            - Creates a dictionary startingRosterSlots{} that is a subset of rosterSlots{} and only includes slotIds that are on the starting roster
+-            - Add rosterSlots{} and startingRosterSlots{} to the League attribute League.rosterSettings
+-    '''
+-    print('Gathering roster settings information...')
+-    
+-    # This dictionary maps each slotId to the position it represents
+-    league.rosterMap = { 0 : 'QB', 1 : 'TQB', 2 : 'RB', 3 : 'RB/WR', 4 : 'WR',
+-                       5 : 'WR/TE', 6 : 'TE', 7 : 'OP', 8 : 'DT', 9 : 'DE',
+-                       10 : 'LB', 11 : 'DL', 12 : 'CB', 13 : 'S', 14 : 'DB',
+-                       15 : 'DP', 16 : 'D/ST', 17 : 'K', 18 : 'P', 19 : 'HC',
+-                       20 : 'BE', 21 : 'IR', 22 : '', 23 : 'RB/WR/TE', 24 : ' '
+-                       }
+-    
+-    roster = league.settings['rosterSettings']['lineupSlotCounts']    # Grab the dictionary containing the number of players of each position a roster contains
+-    rosterSlots = {}                                                # Create an empty dictionary that will replace roster{}
+-    startingRosterSlots = {}                                        # Create an empty dictionary that will be a subset of rosterSlots{} containing only starting players
+-    for positionId in roster:
+-        if roster[positionId] != 0:                                 # Only inlclude slotIds that have a non-zero number of players on the roster
+-            rosterSlots[positionId] = roster[positionId]
+-            if positionId not in ['20', '21', '24']:              # Include all slotIds in the startingRosterSlots{} unless they are bench, injured reserve, or ' '
+-                startingRosterSlots[positionId] = [roster[positionId], league.rosterMap[int(positionId)]]
+-    league.rosterSettings = {'rosterSlots' : rosterSlots, 'startingRosterSlots' : startingRosterSlots}    # Add rosterSlots{} and startingRosterSlots{} as a league attribute
+-    return  
+-
+-def getTeamNames(league):
+-    """ This function takes the teamData of a league and:
+-            - Finds the number of teams in the league
+-            - Creates a dictionary league.swids where the user SWID is the key and the user's full name is the value
+-            - Creates a dictionary league.teamNames where the teamIndex is the key and a list containing [ownerName, teamName] is the value
+-    """
+-    league.numTeams = len(league.teamData['teams'])          # Find the number of teams in the league
+-    
+-    league.swids = {}                                      # Create an empty swids dictionary
+-    for member in league.teamData['members']:              # Add each swid and ownerName to the swids dictionary
+-        league.swids[member['id']] = '%s %s' % (member['firstName'], member['lastName'])
+-    
+-    league.teamNames = {}                                  # Create an empty teamNames dictionary
+-    league.adjustIds= {}
+-    id = 1
+-    for team in league.teamData['teams']:
+-        if team['id'] != id:                                    # If the teamId is not what it is supposed to be...
+-            league.adjustIds[team['id']] = id                     # Save the incorrect teamId for future reference
+-            league.teamData['teams'][id - 1]['id'] = id           # Correct the teamId of the copied team
+-        else: 
+-            league.adjustIds[id] = id
+-        id += 1
+-    
+-    id = 1        
+-    for team in league.teamData['teams']:
+-        teamId = team['id']                                     # Get the teamId of each team
+-        name = '%s %s' % (team['location'], team['nickname'])   # Get the name of each team
+-        swid = team['primaryOwner']                             # Get the swid of each team
+-        owner = league.swids[swid]                                # Get the owner's name for each team
+-        league.teamNames[teamId] = owner                          # Populate the teamNames dictionary
+-        id += 1
+-    return
+-
+-def buildTeams(league):
+-    """ This function builds the Team objects for each team in the league """
+-    league.teams = {}                                                             # Create an empty teams dictionary
+-    matchupData = league.matchupData
+-    print("Current Week:",league.currentWeek)
+-    print('Building teams...')
+-    for teamId in range(1, league.numTeams + 1):
+-        team = Team(league.teamData['teams'][teamId-1])                           # Create a Team object for each team in the league
+-        team.nameOwner(league.teamNames[teamId])                                  # Name the team owner
+-        team.startingRosterSlots = league.rosterSettings['startingRosterSlots']   # Define the league startingRosterSlots setting for each team
+-        league.teams[teamId] = team                                               # Add each Team object to the teams dictionary
+-    
+-    print('Building schedule...')
+-    numMatchups = (league.currentWeek - 1)*league.numTeams // 2     # Determines the number of matchups that have been completed (not including the current week)
+-    for week in range(1, league.settings['scheduleSettings']['matchupPeriodCount'] + 1):
+-        # Build the matchups for every week
+-        if week < league.currentWeek:
+-            matchupData = requests.get(league.url, cookies = league.cookies, params = { 'view' : 'mMatchupScore', 'view' : 'mMatchup', 'scoringPeriodId': week }).json()
+-            if league.year < 2019:
+-                matchupData = matchupData[0]
+-        else: 
+-            matchupData = league.matchupData
+-        
+-        
+-        print('\tBuilding week %d/%d...' % (week, league.settings['scheduleSettings']['matchupPeriodCount']))             
+-        for m in range((week-1)*league.numTeams // 2, (week)*league.numTeams // 2):  
+-            awayTeam = matchupData['schedule'][m]['away']           # Define the away team of the matchup
+-            homeTeam = matchupData['schedule'][m]['home']           # Define the home team of the matchup
+-            
+-            awayId = league.adjustIds[awayTeam['teamId']]             # Define the teamIndex of the away team
+-            homeId = league.adjustIds[homeTeam['teamId']]             # Define the teamIndex of the home team
+-            
+-            league.teams[awayId].schedule[week] = league.teams[homeId]  # Add this matchup to the schedule of the away team's Team object
+-            league.teams[homeId].schedule[week] = league.teams[awayId]  # Add this matchup to the schedule of the home team's Team object
+-            
+-            if league.year >= 2019:
+-                if m < numMatchups:
+-                    league.teams[awayId].addMatchup(awayTeam, week, league.year)       # Add this matchup to the away team's Team object
+-                    league.teams[homeId].addMatchup(homeTeam, week, league.year)       # Add this matchup to the home team's Team object   
+-            else:
+-                if m < numMatchups:
+-                    rosterData = requests.get(league.url, cookies = league.cookies, params = {'view' : 'mRoster', 'scoringPeriodId': week}).json()[0]
+-                    league.teams[awayId].addMatchup(rosterData['teams'][awayId - 1]['roster']['entries'], week, league.year)
+-                    league.teams[homeId].addMatchup(rosterData['teams'][homeId - 1]['roster']['entries'], week, league.year)
+-                    
+-        week += 1         
+-        
+-    return
+-        
+-def loadWeeklyRosters(league, week):
+-    '''Sets Teams Roster for a Certain Week'''
+-    params = {'view': 'mRoster', 'scoringPeriodId': week}       # Specify the request parameters for the given week
+-    rosterData = requests.get(league.url, params = params, cookies = league.cookies).json() # Fetch roster data for the given week
+-    if league.year < 2019:
+-        rosterData = rosterData[0]                              # Adjust rosterData for ESPN API v2
+-    for teamId in league.teams:                                   # Fetch the roster of each team for the given week                 
+-        league.teams[teamId].fetchWeeklyRoster(rosterData['teams'][league.teams[teamId].teamId - 1]['roster'], week)
+-    return  
+-
+-
+-def getWeeklyProjections(league):
+-    # NOT WORKING
+-    for week in range(1, league.currentWeek):
+-        data = requests.get(league.url, cookies = league.cookies, params = {'scoringPeriodId': week}).json()
+-        for team in data['teams']:
+-            teamData = team['roster']['entries']
+-            i = 0
+-            for player in team.rosters[week]:
+-                player.projection = teamData[i]['playerPoolEntry']['player']['stats'][1]['appliedTotal']
+-                player.testName = teamData[i]['playerPoolEntry']['player']['fullName']
+-                i += 1
+-    return
+-
+-
+-def getUrl(year, league_id):
+-    '''
+-    Define endpoint for accessing the ESPN API.
+-    For seasons that started in 2018 and earlier, use the ESPN v2 endpoint.
+-    For seasons that started in 2019 and later, use the ESPN v3 endpoint.
+-    '''
+-    url = ''
+-    if (year >= 2019):         # ESPN API v3
+-        url = "https://fantasy.espn.com/apis/v3/games/ffl/seasons/" + \
+-            str(year) + "/segments/0/leagues/" + str(league_id)
+-    else:                      # ESPN API v2
+-        url = "https://fantasy.espn.com/apis/v3/games/ffl/leagueHistory/" + \
+-            str(league_id) + "?seasonId=" + str(year)
+-    return url
+\ No newline at end of file
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project version=\"4\">\n  <component name=\"AutoImportSettings\">\n    <option name=\"autoReloadType\" value=\"SELECTIVE\" />\n  </component>\n  <component name=\"ChangeListManager\">\n    <list default=\"true\" id=\"187ec636-716f-4623-8c9b-b50a2d7c0e3f\" name=\"Changes\" comment=\"Set up LLM chain with prompt template\">\n      <change beforePath=\"$PROJECT_DIR$/main.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/main.py\" afterDir=\"false\" />\n    </list>\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\n  </component>\n  <component name=\"Git.Settings\">\n    <option name=\"RECENT_BRANCH_BY_REPOSITORY\">\n      <map>\n        <entry key=\"$PROJECT_DIR$\" value=\"luck-index\" />\n      </map>\n    </option>\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\n    <option name=\"ROOT_SYNC\" value=\"DONT_SYNC\" />\n  </component>\n  <component name=\"ProjectColorInfo\">{\n  &quot;associatedIndex&quot;: 6\n}</component>\n  <component name=\"ProjectId\" id=\"2lIiGQMmMNYHpxoityGbS15jBFK\" />\n  <component name=\"ProjectLevelVcsManager\" settingsEditedManually=\"true\" />\n  <component name=\"ProjectViewState\">\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\n    <option name=\"showLibraryContents\" value=\"true\" />\n  </component>\n  <component name=\"PropertiesComponent\">{\n  &quot;keyToString&quot;: {\n    &quot;Python.main.executor&quot;: &quot;Run&quot;,\n    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,\n    &quot;git-widget-placeholder&quot;: &quot;master&quot;,\n    &quot;last_opened_file_path&quot;: &quot;/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3&quot;,\n    &quot;settings.editor.selected.configurable&quot;: &quot;project.propVCSSupport.CommitDialog&quot;\n  }\n}</component>\n  <component name=\"RecentsManager\">\n    <key name=\"MoveFile.RECENT_KEYS\">\n      <recent name=\"$PROJECT_DIR$/doritostats\" />\n    </key>\n  </component>\n  <component name=\"RunManager\">\n    <configuration name=\"main\" type=\"PythonConfigurationType\" factoryName=\"Python\" nameIsGenerated=\"true\">\n      <module name=\"espn-api-v3\" />\n      <option name=\"ENV_FILES\" value=\"\" />\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\n      <option name=\"PARENT_ENVS\" value=\"true\" />\n      <envs>\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\n      </envs>\n      <option name=\"SDK_HOME\" value=\"\" />\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/main.py\" />\n      <option name=\"PARAMETERS\" value=\"1\" />\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\n      <option name=\"MODULE_MODE\" value=\"false\" />\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\n      <option name=\"INPUT_FILE\" value=\"\" />\n      <method v=\"2\" />\n    </configuration>\n  </component>\n  <component name=\"SharedIndexes\">\n    <attachedChunks>\n      <set>\n        <option value=\"bundled-python-sdk-ce3d9afa04ac-ba05f1cad1b1-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-242.20224.347\" />\n      </set>\n    </attachedChunks>\n  </component>\n  <component name=\"SpellCheckerSettings\" RuntimeDictionaries=\"0\" Folders=\"0\" CustomDictionaries=\"0\" DefaultDictionary=\"application-level\" UseSingleDictionary=\"true\" transferred=\"true\" />\n  <component name=\"TaskManager\">\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\n      <changelist id=\"187ec636-716f-4623-8c9b-b50a2d7c0e3f\" name=\"Changes\" comment=\"\" />\n      <created>1724873895265</created>\n      <option name=\"number\" value=\"Default\" />\n      <option name=\"presentableId\" value=\"Default\" />\n      <updated>1724873895265</updated>\n    </task>\n    <task id=\"LOCAL-00001\" summary=\"Getting box score JSON data to feed to LLM\">\n      <option name=\"closed\" value=\"true\" />\n      <created>1725384218644</created>\n      <option name=\"number\" value=\"00001\" />\n      <option name=\"presentableId\" value=\"LOCAL-00001\" />\n      <option name=\"project\" value=\"LOCAL\" />\n      <updated>1725384218644</updated>\n    </task>\n    <task id=\"LOCAL-00002\" summary=\"Set up LLM chain with prompt template\">\n      <option name=\"closed\" value=\"true\" />\n      <created>1725469954851</created>\n      <option name=\"number\" value=\"00002\" />\n      <option name=\"presentableId\" value=\"LOCAL-00002\" />\n      <option name=\"project\" value=\"LOCAL\" />\n      <updated>1725469954851</updated>\n    </task>\n    <option name=\"localTasksCounter\" value=\"3\" />\n    <servers />\n  </component>\n  <component name=\"UnknownFeatures\">\n    <option featureType=\"com.intellij.fileTypeFactory\" implementationName=\".env\" />\n  </component>\n  <component name=\"VcsManagerConfiguration\">\n    <option name=\"CLEAR_INITIAL_COMMIT_MESSAGE\" value=\"true\" />\n    <MESSAGE value=\"Getting box score JSON data to feed to LLM\" />\n    <MESSAGE value=\"Set up LLM chain with prompt template\" />\n    <option name=\"LAST_COMMIT_MESSAGE\" value=\"Set up LLM chain with prompt template\" />\n  </component>\n  <component name=\"XDebuggerManager\">\n    <breakpoint-manager>\n      <breakpoints>\n        <line-breakpoint enabled=\"true\" suspend=\"THREAD\" type=\"python-line\">\n          <url>file://$PROJECT_DIR$/utils/printing_utils.py</url>\n          <option name=\"timeStamp\" value=\"1\" />\n        </line-breakpoint>\n      </breakpoints>\n    </breakpoint-manager>\n  </component>\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision 221bff437993cdad716528d857a238371be66a61)
++++ b/.idea/workspace.xml	(date 1725546198248)
+@@ -5,7 +5,18 @@
+   </component>
+   <component name="ChangeListManager">
+     <list default="true" id="187ec636-716f-4623-8c9b-b50a2d7c0e3f" name="Changes" comment="Set up LLM chain with prompt template">
+-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/FantasySP_values1.csv" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/FantasySP_values2.csv" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/__init__.py" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/league.py" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/scrape_values.py" beforeDir="false" afterPath="$PROJECT_DIR$/scrape_values.py" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/utils/__init__.py" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/utils/building_utils.py" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/utils/chromedriver.exe" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/utils/printing_utils.py" beforeDir="false" />
++      <change beforePath="$PROJECT_DIR$/utils/sorting_utils.py" beforeDir="false" />
+     </list>
+     <option name="SHOW_DIALOG" value="false" />
+     <option name="HIGHLIGHT_CONFLICTS" value="true" />
+@@ -15,7 +26,7 @@
+   <component name="Git.Settings">
+     <option name="RECENT_BRANCH_BY_REPOSITORY">
+       <map>
+-        <entry key="$PROJECT_DIR$" value="luck-index" />
++        <entry key="$PROJECT_DIR$" value="master" />
+       </map>
+     </option>
+     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+@@ -30,15 +41,15 @@
+     <option name="hideEmptyMiddlePackages" value="true" />
+     <option name="showLibraryContents" value="true" />
+   </component>
+-  <component name="PropertiesComponent">{
+-  &quot;keyToString&quot;: {
+-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+-    &quot;last_opened_file_path&quot;: &quot;/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3&quot;,
+-    &quot;settings.editor.selected.configurable&quot;: &quot;project.propVCSSupport.CommitDialog&quot;
++  <component name="PropertiesComponent"><![CDATA[{
++  "keyToString": {
++    "Python.main.executor": "Run",
++    "RunOnceActivity.ShowReadmeOnStart": "true",
++    "git-widget-placeholder": "player__values",
++    "last_opened_file_path": "/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3",
++    "settings.editor.selected.configurable": "project.propVCSSupport.CommitDialog"
+   }
+-}</component>
++}]]></component>
+   <component name="RecentsManager">
+     <key name="MoveFile.RECENT_KEYS">
+       <recent name="$PROJECT_DIR$/doritostats" />
+diff --git a/utils/__init__.py b/utils/__init__.py
+deleted file mode 100644
+diff --git a/__init__.py b/__init__.py
+deleted file mode 100644
