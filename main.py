@@ -304,7 +304,7 @@ def gen_playoff_prob():
 
 def gen_expected_standings(power_rankings):
     """ By comparing the current power score of a team to their remaining opponents, project wins and losses for the rest of the year"""
-    allScheduleProb = [] # empty list to be filled with win probabilities for each teams schedule
+    expected_wins = [] # empty list to be filled with # of expected wins for each team
     sos = [] # strength of schedule list
     print(f'Power Rankings: \n{power_rankings}')
 
@@ -312,12 +312,9 @@ def gen_expected_standings(power_rankings):
         print(f'Team: {team.team_name}')
 
         # Get the team's Power Score by matching the team name in the DataFrame
-        team_power_score = power_rankings.loc[power_rankings['Team'] == team.team_name, 'Power Score'].values[0]
+        team_power_score = float(power_rankings.loc[power_rankings['Team'] == team.team_name, 'Power Score'].values[0])
 
         print(f'{team.team_name} Power Score: {team_power_score}')
-
-        # Get teams remainnig schedule as list of team objects
-        schedule_obj = team.schedule
 
         # Empty list to populate with the teams probability of winning each remaining matchup
         win_prob_schedule = []
@@ -325,9 +322,10 @@ def gen_expected_standings(power_rankings):
         # Initialize strength of schedule to 0, will be average power score of remaining opponents
         team_sos = 0
 
-        for opp in schedule_obj:
+        # Calculate team's win prob for each opp on schedule
+        for opp in team.schedule:
             # Get the current power score of the teams opponent
-            opp_power_score = power_rankings.loc[power_rankings['Team'] == opp.team_name, 'Power Score'].values[0]
+            opp_power_score = float(power_rankings.loc[power_rankings['Team'] == opp.team_name, 'Power Score'].values[0])
 
             # Compute the probability of the team winning as the teams's share of the added power scores of both teams
             win_prob = team_power_score / (opp_power_score + team_power_score)
@@ -339,21 +337,29 @@ def gen_expected_standings(power_rankings):
             win_prob_schedule.append(win_prob)
             # for values in key:
             #      schedule.append(item.teamName)
+        print(f'Win Probabilities for {team}:\n{win_prob_schedule}')
+
+        # Calculate a team's expected wins as the sum of it's win probabilities
+        team_expected_wins = sum(win_prob_schedule)
 
         # Average SOS by remaining games
         team_sos = team_sos / len(team.schedule)
+
+        # Append team name and expected wins to league wide expected wins list
+        expected_wins.append([team.team_name, team_expected_wins])
+
+        # Append team name and remaining sos to league wide sos list
+        sos.append(team_sos)
+
+    print(f'Expected wins list: {expected_wins}')
+    print(f'SOS list: {sos}')
+
+    # Convert expected wins and sos to Dataframes to join together
+    expected_wins_df = pd.DataFrame(expected_wins)
+    sos_df = pd.DataFrame(sos).round(2)
 ### PICK UP HERE
-        allScheduleProb.append(scheduleProb) # append each team
-
-        addToSOS = [team.team_name, teamSOS]
-
-        sos.append(addToSOS) # append each team's SOS
-    print(allScheduleProb)
-
-    # convert to pandas dataframes
-    allScheduleProb = pd.DataFrame(allScheduleProb)
-    sos = pd.DataFrame(sos).round(2)
-
+    # if it is week 9 or greater, join sos with expected wins
+    if week > 9:
     sos = sos.iloc[:,0:2] # remove empty end column
     sos = sos.set_axis(['Team', 'SOS'], axis=1) # set column names
 
