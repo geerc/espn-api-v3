@@ -1,8 +1,12 @@
+'''
+TODO:
+1. Switch fantasy pros to Keep Trade Cut values
+'''
+
 from urllib.request import urlopen
 from bs4 import BeautifulSoup
 import pandas as pd
 from progressbar import ProgressBar
-from tqdm import tqdm
 from tabulate import tabulate as table
 
 pbar = ProgressBar()
