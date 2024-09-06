@@ -1,3 +1,11 @@
+'''
+TODO:
+1. After week 1 check that expected standings are lining up teams correctly when adding back to dataframe after simulation
+2. Update player values to pull from KTC
+3. Use player values to inform AI summary
+4. Create CRON job to run automatically
+5. Update args to default to current week if not specified
+'''
 from langchain_core.runnables import RunnableSequence
 
 import pandas as pd
