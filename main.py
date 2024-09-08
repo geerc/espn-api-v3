@@ -357,11 +357,11 @@ def gen_expected_standings(power_rankings):
     # Convert expected wins and sos to Dataframes to join together
     expected_wins_df = pd.DataFrame(expected_wins)
     sos_df = pd.DataFrame(sos).round(2)
-### PICK UP HERE
+
     # if it is week 9 or greater, join sos with expected wins
     if week > 9:
-    sos = sos.iloc[:,0:2] # remove empty end column
-    sos = sos.set_axis(['Team', 'SOS'], axis=1) # set column names
+        expected_wins_df = expected_wins_df.merge(sos_df, on='Team')
+
 
     probSched = pd.DataFrame(team_names, columns = ['Team'])
     probSched = probSched.join(allScheduleProb)
