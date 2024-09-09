@@ -382,6 +382,7 @@ def gen_ai_summary():
     return result.content
 
 # Generate Power Rankings
+print('\nGenerating Power Rankings...')
 rankings = gen_power_rankings()
 
 # Generate Expected Standings
@@ -460,7 +461,8 @@ print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center
 # print("\n WEEK ", week, " POWER SCORE (CALC W/ LEAGUE AVERAGE SCORE)")
 # print(table(team_scores_prt, headers='keys', tablefmt='github', numalign='decimal'))
 
-# close text file
+# Close file and restore standard output
 sys.stdout.close()
+sys.stdout = sys.__stdout__
 
 print('\nDone!\n')
