@@ -110,6 +110,9 @@ def gen_power_rankings():
 
         power_rankings_df.insert(loc=1, column='Weekly Change', value=emojis)  # insert the weekly change column
 
+    # Set index to start at 1
+    power_rankings_df = power_rankings_df.set_axis(range(1, len(power_rankings_df) + 1))
+
     return power_rankings_df
 
 def gen_playoff_prob():
@@ -347,19 +350,19 @@ def gen_ai_summary():
     print("\n\tGenerating summary with LLM...")
 
     # Sample JSON data (replace with your actual JSON data)
-    json_data = box_scores_json
+    # json_data = box_scores_json
 
     # Setting up OpenAI model
     llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0, openai_api_key=api_key)
 
     # Define the prompt template for generating a newspaper-like summary
     prompt_template = PromptTemplate(
-        input_variables=["json_data"],
+        input_variables=["box_scores_json"],
         template="""
         Write a newspaper-style summary of the fantasy football matchups based on the following JSON data:
 
-        {json_data}
-
+        {box_scores_json}
+            
         The summary should include:
         - The names of the teams
         - The projected scores for each team
@@ -404,7 +407,7 @@ for i, team in enumerate(teams):
         luck_index_value += luck_index.get_weekly_luck_index(league, team, luck_week)
 
     # append team's season long luck index to the list
-    season_luck_index.append([team, luck_index_value])
+    season_luck_index.append([team.team_name, luck_index_value])
 
     # reset luck index value
     luck_index_value = 0
@@ -412,8 +415,11 @@ for i, team in enumerate(teams):
     # Update the progress bar
     bar_luck_index.update(i + 1)
 
-# convert season long luck index list to pandas dataframe
+# convert season long luck index list to pandas dataframe, sort by 'Luck Index', and set index to start at 1
 season_luck_index = pd.DataFrame(season_luck_index, columns=['Team','Luck Index'])
+season_luck_index.sort_values(by='Luck Index', ascending=False, inplace=True, ignore_index=True)
+season_luck_index = season_luck_index.set_axis(range(1, len(season_luck_index)+1))
+
 
 # Generate AI Summary
 print('\n\nGenerating AI Summary...')
@@ -429,7 +435,7 @@ sys.stdout = open(filepath, "w")
 print("---")
 print("title: Week", str(week), year, "Report")
 print("date: ",datetime.now().date())
-print(f"image: /images/{year}week{week}.jpeg")
+print(f"image: /images/{year}week{week}.jpg")
 print("draft: true")
 print("---")
 
