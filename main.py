@@ -108,20 +108,18 @@ def gen_ai_summary():
     # Convert to JSON format
     box_scores_json = json.dumps(box_scores_data, indent=4)
 
-
-    # Sample JSON data (replace with your actual JSON data)
-    json_data = box_scores_json
-
     # Setting up OpenAI model
     llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0, openai_api_key=api_key)
 
     # Define the prompt template for generating a newspaper-like summary
     prompt_template = PromptTemplate(
-        input_variables=["json_data"],
+        input_variables=["box_scores_json", "week"],
         template="""
         Write a newspaper-style summary of the fantasy football matchups based on the following JSON data:
 
         {json_data}
+        
+        You should also extensively search the internet for 'NFL Week {week} Storylines'.
 
         The summary should include:
         - The names of the teams
@@ -143,7 +141,7 @@ def gen_ai_summary():
     json_data = box_scores_json
 
     # Generate the newspaper-like summary
-    result = llm_chain.run(json_data=json_data)
+    result = llm_chain.invoke(input={"box_score_json": box_scores_json, "week": week})
 
     # return the result
     return result
