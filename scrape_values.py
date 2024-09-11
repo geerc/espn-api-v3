@@ -11,12 +11,12 @@ from tqdm import tqdm
 root = '/Users/christiangeer/Fantasy_Sports/football/power_rankings/player_values/espn-api-v3/values/week'
 
 
-def player_values():
+def player_values(week):
     # URL of the rankings page
     base_url = "https://keeptradecut.com/fantasy-rankings?page={}&filters=QB|WR|RB|TE|DST|PK&format=1"
 
     # CSV file path
-    csv_file_path = '/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/KTC_values.csv'
+    csv_file_path = f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv'
 
     # Find the table or section containing the player data
     players = []
@@ -77,5 +77,5 @@ def player_values():
 
     return players_df
 
-player_values = player_values()
+player_values = player_values(1)
 print(player_values.head())
