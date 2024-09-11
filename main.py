@@ -98,6 +98,34 @@ def gen_power_rankings():
 
         power_rankings_df.insert(loc=1, column='Weekly Change', value=emojis)  # insert the weekly change column
 
+    # Load players values for the week
+    player_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
+
+    # Generate DataFrame of Team Rosters
+    league_rosters = []
+    for team in league.teams:
+        # Get list of player objects for each team
+        team_roster = team.roster
+
+        for player in team_roster:
+            # Append player name, position and the team that they're on
+            league_rosters.append([team.team_name, player.name, player.position])
+
+    league_rosters_df = pd.DataFrame(league_rosters, columns=['Team','Player','Position'])
+    print(league_rosters_df.head())
+
+    # Join Player values and rosters dataframes
+    player_values = player_values[['Player Name', 'Value']].merge(league_rosters_df, left_on='Player Name', right_on='Player', suffixes=('_values', '_rosters'), how='right')
+
+    roster_check = player_values[(player_values['Player Name'] != player_values['Player']) & (player_values['Team'].notnull())]
+
+    print(f'Check for rostered players without values:\n{roster_check}')
+
+    print('Players per team:')
+    for team in league.teams:
+        team.team_name
+    # team_values =
+
     return power_rankings_df
 
 def gen_ai_summary():
@@ -193,6 +221,7 @@ def gen_ai_summary():
     return result.content
 
 # Generate Power Rankings
+print('\nGenerating Power Rankings...')
 rankings = gen_power_rankings()
 
 # Generate Expected Standings
