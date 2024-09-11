@@ -4,61 +4,78 @@ import pandas as pd
 from progressbar import ProgressBar
 from tqdm import tqdm
 from tabulate import tabulate as table
+import requests
+import csv
+from tqdm import tqdm
 
-pbar = ProgressBar()
-
-root = '/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/values/week'
-
-positions = ['QB','RB','WR','TE']
-
-def player_values(week):
-    for pos in positions:
-        url = 'https://www.fantasysp.com/trade-value-chart/nfl/{}'.format(pos)
-
-        # this is the HTML from the given URL
-        html = urlopen(url)
-
-        soup = BeautifulSoup(html, features='lxml') #features ensures runs the same on different systems
-
-        # use findALL() to get the column headers
-        soup.findAll('tr', limit=2)
-
-        # use getText()to extract the text we need into a list
-        headers = [th.getText() for th in soup.findAll('tr', limit=2)[1].findAll('th')]
-        # exclude the first column
-
-        # headers = headers[1:]
-
-        # print(headers)
-
-        # if its the first pos (qb), create blank dataframe, need to do here to get headers
-        if pos == 'QB':
-            all_pos = pd.DataFrame(columns=headers)
-
-        # avoid the first header row
-        rows = soup.findAll('tr')[1:]
-        team_stats = [[td.getText() for td in rows[i].findAll('td')]
-                for i in range(len(rows))]
-
-        # save as pandas dataframe
-        stats = pd.DataFrame(team_stats, columns=headers)
-        stats['position'] = pos
-
-        # apppend to datafraem
-        all_pos = all_pos.append(stats)
+root = '/Users/christiangeer/Fantasy_Sports/football/power_rankings/player_values/espn-api-v3/values/week'
 
 
-    # drop rows that aren't part of the ratings (na ratings)
-    all_pos = all_pos[all_pos['RATING'].notna()]
+def player_values():
+    # URL of the rankings page
+    base_url = "https://keeptradecut.com/fantasy-rankings?page={}&filters=QB|WR|RB|TE|DST|PK&format=1"
 
-    # remove positions
-    all_pos['Player'] = all_pos['Player'].replace(' $', '', regex=True)
+    # CSV file path
+    csv_file_path = '/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/KTC_values.csv'
 
+    # Find the table or section containing the player data
+    players = []
 
-    # change vs last week column headers
-    all_pos.rename(columns={'vs LAST WEEK':'change'}, inplace=True)
+    # First, we estimate the total number of player rows to set the progress bar
+    total_players = 0
+    for page in range(8):
+        url = base_url.format(page)
+        response = requests.get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        player_rows = soup.find_all('div', class_='onePlayer')
+        total_players += len(player_rows)
 
-    # subset columns that we need
-    all_pos = all_pos[['Player','RATING','position']]
+    # Initialize a single tqdm progress bar for all pages
+    with tqdm(total=total_players, desc="Scraping Player Data") as pbar:
+        # Loop over pages 0 to 7
+        for page in range(8):
+            url = base_url.format(page)
 
-    return all_pos
+            # Send a request to fetch the webpage for each page
+            response = requests.get(url)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Find all the player rows
+            player_rows = soup.find_all('div', class_='onePlayer')
+
+            # Iterate through the relevant sections containing player name, position, and value
+            for row in player_rows:
+                player_info = row.find('div', class_='player-name')
+
+                # Extract player name from <a> tag
+                player_name = player_info.find('a').get_text(strip=True)
+
+                # Extract player position and value
+                player_pos = row.find('p', class_='position').get_text(strip=True)
+                player_value = row.find('div', class_='value').get_text(strip=True)
+
+                # Append to players list
+                players.append({
+                    'Player Name': player_name,
+                    'Pos': player_pos,
+                    'Value': player_value
+                })
+
+                # Update progress bar
+                pbar.update(1)
+
+    # Write to a CSV file
+    with open(csv_file_path, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=['Player Name', 'Pos', 'Value'])
+        writer.writeheader()  # Write header
+        writer.writerows(players)  # Write rows from player data
+
+    print(f"Data successfully written to {csv_file_path}\n")
+
+    # Convert to Pandas DF
+    players_df = pd.DataFrame(players, columns=['Player Name','Pos','Value'])
+
+    return players_df
+
+player_values = player_values()
+print(player_values.head())
