@@ -18,6 +18,7 @@ import time
 import progressbar
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
+import numpy as np
 
 # parser = argparse.ArgumentParser()
 # parser.add_argument("week", help='Get week of the NFL season to run rankings for')
@@ -166,7 +167,7 @@ def gen_power_rankings():
 
     # Check for rostered players without exact value matches
     roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
-    print(f'\nCheck for rostered players without exact matches:\n{roster_check}')
+    print(f'\n\tCheck for rostered players without exact matches:\n\t{roster_check}')
 
     # Group by 'Team' and 'Position', summing 'Value'
     team_pos_values = final_df.groupby(['Team', 'Pos'], as_index=False)['Value'].sum()
@@ -185,14 +186,26 @@ def gen_power_rankings():
                                             errors='coerce')
 
     # Normalize 'Power Score' and 'Value' using min-max normalization
-    power_rankings_df['Power Score Normalized'] = (power_rankings_df['Power Score'] - power_rankings_df[
-        'Power Score'].min()) / (power_rankings_df['Power Score'].max() - power_rankings_df['Power Score'].min())
-    power_rankings_df['Value Normalized'] = (power_rankings_df['Value'] - power_rankings_df['Value'].min()) / (
-                power_rankings_df['Value'].max() - power_rankings_df['Value'].min())
+    power_rankings_df['Power Score Normalized'] = (power_rankings_df['Power Score'] - power_rankings_df['Power Score'].min()) / (
+                power_rankings_df['Power Score'].max() - power_rankings_df['Power Score'].min())
+    power_rankings_df['Value Normalized'] = (power_rankings_df['Value'] - power_rankings_df['Value'].min()) / (power_rankings_df['Value'].max() - power_rankings_df['Value'].min())
 
-    # Calculate new power score as the average of the normalized values
-    power_rankings_df['New Power Score'] = (power_rankings_df['Power Score Normalized'] + power_rankings_df[
-        'Value Normalized']) / 2
+    print('Normalized cols:\n', power_rankings_df[['Power Score Normalized','Value Normalized']])
+
+    # Parameters for the weight function to achieve f(1) ~ 0.5 and f(15) ~ .1
+    a = 0.5585
+    b = -0.1147
+
+    # Calculate the weight for the 'Value' column
+    value_weight = round(a * np.exp(b * week), 2)
+
+    # Calculate the weight for 'Power Score'
+    power_score_weight = 1 - value_weight
+
+    # Calculate the new power score using the weights
+    power_rankings_df['New Power Score'] = (power_rankings_df['Power Score Normalized'] * power_score_weight +
+                                            power_rankings_df['Value Normalized'] * value_weight) / \
+                                           (power_score_weight + value_weight)
 
     # Drop the intermediate columns
     power_rankings_df = power_rankings_df.drop(columns=['Power Score Normalized', 'Value Normalized'])
@@ -201,13 +214,15 @@ def gen_power_rankings():
     power_rankings_df = power_rankings_df.sort_values(by=['New Power Score'], ascending=False)
 
     # Rename columns for output
-    power_rankings_df = power_rankings_df.rename(columns={'Power Score':'Performance Score', 'Value':'Team Value', 'New Power Score':'Power Score'})
+    power_rankings_df = power_rankings_df.rename(columns={'Power Score':'Performance Score', 'Value':'KTCgit ad Value', 'New Power Score':'Power Score'})
 
     # Divide Performance score by 100 for readability
     power_rankings_df['Team Value'] = round(power_rankings_df['Team Value'] / 100, 2)
 
     # Multiply power  score by 100, round to 2 decimals
     power_rankings_df['Power Score'] = round(power_rankings_df['Power Score'] * 100, 2)
+
+    print(power_rankings_df)
 
     return power_rankings_df
 
