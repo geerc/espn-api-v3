@@ -175,7 +175,7 @@ def merge_vales(redraft, dynasty, week):
 dynasty_values = scrape_dynasty_values(week)
 
 # Adjust dyansty_values to more closely reflect potential redraft values
-dynasty_values['Value'] = dynasty_values['Value']*.8
+dynasty_values['Value'] = round(dynasty_values['Value']*.8, 0)
 
 redraft_values =  scrape_redraft_values(week)
 
