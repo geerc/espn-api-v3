@@ -16,11 +16,13 @@ from dotenv import load_dotenv
 from doritostats import luck_index
 import time
 import progressbar
+from fuzzywuzzy import fuzz
+from fuzzywuzzy import process
 
-parser = argparse.ArgumentParser()
-parser.add_argument("week", help='Get week of the NFL season to run rankings for')
-args = parser.parse_args()
-week = int(args.week)
+# parser = argparse.ArgumentParser()
+# parser.add_argument("week", help='Get week of the NFL season to run rankings for')
+# args = parser.parse_args()
+
 
 # Define dates/year
 year = datetime.now().year
@@ -37,10 +39,38 @@ espn_s2 = os.getenv('espn_s2')
 api_key= os.getenv('OPEN_AI_KEY')
 
 league = League(league_id, year, espn_s2, swid)
-print(league, "\n")
+
+# Get NFL week
+week = league.nfl_week - 1
+# week = 6
+
+print(league, "\n", f'Week {week}')
 
 # Create list of teams
 teams = league.teams
+
+
+def fuzzy_merge(df1, df2, key1, key2, threshold=90, limit=1):
+    """
+    Perform fuzzy merge between two DataFrames based on the similarity of the values in key1 and key2.
+    Parameters:
+    - df1: First DataFrame.
+    - df2: Second DataFrame.
+    - key1: Column in df1 to match.
+    - key2: Column in df2 to match.
+    - threshold: Similarity threshold (0-100).
+    - limit: Maximum number of matches to return per key.
+    """
+    matches = df1[key1].apply(
+        lambda x: process.extractOne(x, df2[key2], scorer=fuzz.token_sort_ratio, score_cutoff=threshold))
+
+    df1['Best Match'] = matches.apply(lambda x: x[0] if x is not None else None)
+    df1['Match Score'] = matches.apply(lambda x: x[1] if x is not None else None)
+
+    # Merge on the 'Best Match' instead of the original key
+    merged_df = pd.merge(df1, df2, left_on='Best Match', right_on=key2, how='left')
+
+    return merged_df
 
 def gen_power_rankings():
     power_rankings = league.power_rankings(week=week)
@@ -98,8 +128,10 @@ def gen_power_rankings():
 
         power_rankings_df.insert(loc=1, column='Weekly Change', value=emojis)  # insert the weekly change column
 
+    # Integrate player values into Power Rankings
+
     # Load players values for the week
-    player_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
+    player_values = pd.read_csv(f'/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
 
     # Generate DataFrame of Team Rosters
     league_rosters = []
@@ -112,19 +144,70 @@ def gen_power_rankings():
             league_rosters.append([team.team_name, player.name, player.position])
 
     league_rosters_df = pd.DataFrame(league_rosters, columns=['Team','Player','Position'])
-    print(league_rosters_df.head())
 
-    # Join Player values and rosters dataframes
-    player_values = player_values[['Player Name', 'Value']].merge(league_rosters_df, left_on='Player Name', right_on='Player', suffixes=('_values', '_rosters'), how='right')
+    # Remove the number at the end of the 'Pos' values
+    player_values['Pos'] = player_values['Pos'].str.extract(r'(\D+)')
 
-    roster_check = player_values[(player_values['Player Name'] != player_values['Player']) & (player_values['Team'].notnull())]
+    # Filter out defenses and PKs
+    league_rosters_filtered = league_rosters_df[~league_rosters_df['Position'].isin(['D/ST', 'PK'])]
+    player_values_filtered = player_values[~player_values['Pos'].isin(['DST', 'PK'])]
 
-    print(f'Check for rostered players without values:\n{roster_check}')
+    # Perform fuzzy merge to match slightly different player names
+    player_values_fuzzy_merged = fuzzy_merge(
+        player_values_filtered[['Player Name', 'Pos', 'Value']],
+        league_rosters_filtered[['Player', 'Team']],  # Ensure 'Team' is included in the merge
+        'Player Name',
+        'Player',
+        threshold=90
+    )
 
-    print('Players per team:')
-    for team in league.teams:
-        team.team_name
-    # team_values =
+    # Select and rename the final columns as 'Player Name', 'Pos', 'Value', and 'Team'
+    final_df = player_values_fuzzy_merged[['Player Name', 'Pos', 'Value', 'Team']]
+
+    # Check for rostered players without exact value matches
+    roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
+    print(f'\nCheck for rostered players without exact matches:\n{roster_check}')
+
+    # Group by 'Team' and 'Position', summing 'Value'
+    team_pos_values = final_df.groupby(['Team', 'Pos'], as_index=False)['Value'].sum()
+
+    # Rename columns to keep consistency
+    team_pos_values.rename(columns={'Position': 'Pos'}, inplace=True)
+
+    # Group by position to get total team value
+    team_values = team_pos_values.groupby(['Team'], as_index=False)['Value'].sum()
+
+    # power_rankings and values
+    power_rankings_df = power_rankings_df.merge(team_values, on='Team')
+
+    # Convert 'Power Score' to numeric, forcing errors to NaN
+    power_rankings_df['Power Score'] = pd.to_numeric(power_rankings_df['Power Score'].str.replace(',', '').str.replace('$', ''),
+                                            errors='coerce')
+
+    # Normalize 'Power Score' and 'Value' using min-max normalization
+    power_rankings_df['Power Score Normalized'] = (power_rankings_df['Power Score'] - power_rankings_df[
+        'Power Score'].min()) / (power_rankings_df['Power Score'].max() - power_rankings_df['Power Score'].min())
+    power_rankings_df['Value Normalized'] = (power_rankings_df['Value'] - power_rankings_df['Value'].min()) / (
+                power_rankings_df['Value'].max() - power_rankings_df['Value'].min())
+
+    # Calculate new power score as the average of the normalized values
+    power_rankings_df['New Power Score'] = (power_rankings_df['Power Score Normalized'] + power_rankings_df[
+        'Value Normalized']) / 2
+
+    # Drop the intermediate columns
+    power_rankings_df = power_rankings_df.drop(columns=['Power Score Normalized', 'Value Normalized'])
+
+    # Sort by new power score
+    power_rankings_df = power_rankings_df.sort_values(by=['New Power Score'], ascending=False)
+
+    # Rename columns for output
+    power_rankings_df = power_rankings_df.rename(columns={'Power Score':'Performance Score', 'Value':'Team Value', 'New Power Score':'Power Score'})
+
+    # Divide Performance score by 100 for readability
+    power_rankings_df['Team Value'] = round(power_rankings_df['Team Value'] / 100, 2)
+
+    # Multiply power  score by 100, round to 2 decimals
+    power_rankings_df['Power Score'] = round(power_rankings_df['Power Score'] * 100, 2)
 
     return power_rankings_df
 
