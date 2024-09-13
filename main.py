@@ -485,6 +485,10 @@ def gen_expected_standings(power_rankings):
     # Sort by projected wins
     expected_wins_df = expected_wins_df.sort_values(by=['Projected Wins'], ascending=False)
 
+    # Set index to start at 1
+    expected_wins_df = expected_wins_df.set_axis(range(1, len(expected_wins_df) + 1))
+
+
     return expected_wins_df
 
 def gen_ai_summary():
