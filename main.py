@@ -167,7 +167,7 @@ def gen_power_rankings():
 
     # Check for rostered players without exact value matches
     roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
-    print(f'\n\tCheck for rostered players without exact matches:\n\t{roster_check}')
+    print(f'\n\tCheck for rostered players without exact matches:\n{roster_check}')
 
     # Group by 'Team' and 'Position', summing 'Value'
     team_pos_values = final_df.groupby(['Team', 'Pos'], as_index=False)['Value'].sum()
@@ -189,8 +189,6 @@ def gen_power_rankings():
     power_rankings_df['Power Score Normalized'] = (power_rankings_df['Power Score'] - power_rankings_df['Power Score'].min()) / (
                 power_rankings_df['Power Score'].max() - power_rankings_df['Power Score'].min())
     power_rankings_df['Value Normalized'] = (power_rankings_df['Value'] - power_rankings_df['Value'].min()) / (power_rankings_df['Value'].max() - power_rankings_df['Value'].min())
-
-    print('Normalized cols:\n', power_rankings_df[['Power Score Normalized','Value Normalized']])
 
     # Parameters for the weight function to achieve f(1) ~ 0.5 and f(15) ~ .1
     a = 0.5585
@@ -214,15 +212,22 @@ def gen_power_rankings():
     power_rankings_df = power_rankings_df.sort_values(by=['New Power Score'], ascending=False)
 
     # Rename columns for output
-    power_rankings_df = power_rankings_df.rename(columns={'Power Score':'Performance Score', 'Value':'KTCgit ad Value', 'New Power Score':'Power Score'})
+    power_rankings_df = power_rankings_df.rename(columns={'Power Score':'Performance Score', 'Value':'KTC Value', 'New Power Score':'Power Score'})
 
     # Divide Performance score by 100 for readability
-    power_rankings_df['Team Value'] = round(power_rankings_df['Team Value'] / 100, 2)
+    power_rankings_df['KTC Value'] = round(power_rankings_df['KTC Value'] / 100, 2)
 
     # Multiply power  score by 100, round to 2 decimals
     power_rankings_df['Power Score'] = round(power_rankings_df['Power Score'] * 100, 2)
 
-    print(power_rankings_df)
+    # Rank 'Performance Score' in descending order
+    power_rankings_df['Performance Rank'] = power_rankings_df['Performance Score'].rank(ascending=False)
+
+    # Rank 'KTC Value' in descending order
+    power_rankings_df['KTC Value Rank'] = power_rankings_df['KTC Value'].rank(ascending=False)
+
+    # Drop the original 'Performance Score' and 'KTC Value' columns
+    power_rankings_df = power_rankings_df.drop(columns=['Performance Score', 'KTC Value'])
 
     # Set index to start at 1
     power_rankings_df = power_rankings_df.set_axis(range(1, len(power_rankings_df) + 1))
