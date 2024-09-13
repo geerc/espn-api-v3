@@ -167,7 +167,7 @@ def gen_power_rankings():
 
     # Check for rostered players without exact value matches
     roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
-    print(f'\n\tCheck for rostered players without exact matches:\n{roster_check}')
+    print(f'\n\tCheck for rostered players without exact matches:\n\n{roster_check}')
 
     # Group by 'Team' and 'Position', summing 'Value'
     team_pos_values = final_df.groupby(['Team', 'Pos'], as_index=False)['Value'].sum()
@@ -431,15 +431,11 @@ def gen_expected_standings(power_rankings):
     """ By comparing the current power score of a team to their remaining opponents, project wins and losses for the rest of the year"""
     expected_wins = [] # empty list to be filled with # of expected wins for each team
     sos = [] # strength of schedule list
-    print(f'Power Rankings: \n{power_rankings}')
 
     for team in league.teams:
-        print(f'Team: {team.team_name}')
 
         # Get the team's Power Score by matching the team name in the DataFrame
         team_power_score = float(power_rankings.loc[power_rankings['Team'] == team.team_name, 'Power Score'].values[0])
-
-        print(f'{team.team_name} Power Score: {team_power_score}')
 
         # Empty list to populate with the teams probability of winning each remaining matchup
         win_prob_schedule = []
@@ -463,8 +459,6 @@ def gen_expected_standings(power_rankings):
                 # Add probability to win this matchup to win prob schedule list
                 win_prob_schedule.append(win_prob)
 
-        print(f'Win Probabilities for remaining games for {team.team_name}:\n{win_prob_schedule}')
-
         # Calculate a team's expected wins as the sum of it's win probabilities and current wins
         team_expected_wins = round(sum(win_prob_schedule) + team.wins, 2)
 
@@ -480,18 +474,16 @@ def gen_expected_standings(power_rankings):
         # Append team name and remaining sos to league wide sos list
         sos.append(team_sos)
 
-    print(f'Expected wins list: {expected_wins}')
-    print(f'SOS list: {sos}')
-
     # Convert expected wins and sos to Dataframes to join together
     expected_wins_df = pd.DataFrame(expected_wins, columns=['Team','Projected Wins','Projected Losses'])
     sos_df = pd.DataFrame(sos).round(2)
 
-    print(expected_wins_df.sort_values(by=['Projected Wins'], ascending=False))
-
     # if it is week 9 or greater, join sos with expected wins
     if week > 9:
         expected_wins_df.merge(sos_df, on='Team')
+
+    # Sort by projected wins
+    expected_wins_df = expected_wins_df.sort_values(by=['Projected Wins'], ascending=False)
 
     return expected_wins_df
 
