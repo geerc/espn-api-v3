@@ -322,31 +322,35 @@ def gen_expected_standings(power_rankings):
         # Initialize strength of schedule to 0, will be average power score of remaining opponents
         team_sos = 0
 
-        # Calculate team's win prob for each opp on schedule
-        for opp in team.schedule:
-            # Get the current power score of the teams opponent
-            opp_power_score = float(power_rankings.loc[power_rankings['Team'] == opp.team_name, 'Power Score'].values[0])
+        # Calculate team's win prob for each opp on schedule, only for remaining games
+        for week_num, opp in enumerate(team.schedule, start=1):
+            if week_num > week:  # Skip past games, only calculate for remaining weeks
+                # Get the current power score of the opponent
+                opp_power_score = float(
+                    power_rankings.loc[power_rankings['Team'] == opp.team_name, 'Power Score'].values[0])
 
-            # Compute the probability of the team winning as the teams's share of the added power scores of both teams
-            win_prob = team_power_score / (opp_power_score + team_power_score)
+                # Compute the probability of the team winning as the team's share of the added power scores of both teams
+                win_prob = team_power_score / (opp_power_score + team_power_score)
 
-            # Add opponents power score to SOS value
-            team_sos += opp_power_score
+                # Add opponent's power score to SOS value
+                team_sos += opp_power_score
 
-            # Add probability to win this matchup to win prob schedule list
-            win_prob_schedule.append(win_prob)
-            # for values in key:
-            #      schedule.append(item.teamName)
-        print(f'Win Probabilities for {team}:\n{win_prob_schedule}')
+                # Add probability to win this matchup to win prob schedule list
+                win_prob_schedule.append(win_prob)
 
-        # Calculate a team's expected wins as the sum of it's win probabilities
-        team_expected_wins = sum(win_prob_schedule)
+        print(f'Win Probabilities for remaining games for {team.team_name}:\n{win_prob_schedule}')
+
+        # Calculate a team's expected wins as the sum of it's win probabilities and current wins
+        team_expected_wins = round(sum(win_prob_schedule) + team.wins, 2)
+
+        # Calculate a team's expected losses as total games (15) - projected wins, then add current losses
+        team_expected_losses = 15 - team_expected_wins + team.losses
 
         # Average SOS by remaining games
-        team_sos = team_sos / len(team.schedule)
+        team_sos = team_sos / (15 - week)
 
         # Append team name and expected wins to league wide expected wins list
-        expected_wins.append([team.team_name, team_expected_wins])
+        expected_wins.append([team.team_name, team_expected_wins, team_expected_losses])
 
         # Append team name and remaining sos to league wide sos list
         sos.append(team_sos)
@@ -355,54 +359,16 @@ def gen_expected_standings(power_rankings):
     print(f'SOS list: {sos}')
 
     # Convert expected wins and sos to Dataframes to join together
-    expected_wins_df = pd.DataFrame(expected_wins)
+    expected_wins_df = pd.DataFrame(expected_wins, columns=['Team','Projected Wins','Projected Losses'])
     sos_df = pd.DataFrame(sos).round(2)
+
+    print(expected_wins_df.sort_values(by=['Projected Wins'], ascending=False))
 
     # if it is week 9 or greater, join sos with expected wins
     if week > 9:
-        expected_wins_df = expected_wins_df.merge(sos_df, on='Team')
+        expected_wins_df.merge(sos_df, on='Team')
 
-
-    probSched = pd.DataFrame(team_names, columns = ['Team'])
-    probSched = probSched.join(allScheduleProb)
-
-    weeksLeft = week - 15
-    probSchedLeft = probSched[probSched.columns[weeksLeft:]] # create dataframe of the prob schedules for weeks left to play
-
-    projectedStandings = pd.DataFrame(probSched['Team'].to_numpy(), columns=['Team']) # start projectedStandings with just team names
-
-    currentWins = []
-    currentLosses = []
-    # add current wins and losses to empty lists to be added to projectedStandings
-    for team in teams:
-        currentWins = np.append(currentWins, team.wins)
-        currentLosses = np.append(currentLosses, team.losses)
-
-    projectedStandings['CurrentWins'] = currentWins
-    projectedStandings['CurrentLosses'] = currentLosses
-
-    # sum up the probabilties to get proj wins and losses
-    projectedStandings['ForcastedWins'] = probSched.iloc[:, weeksLeft-2:-2].sum(axis=1).round(2)
-    projectedStandings['ForcastedLosses'] = abs(weeksLeft) - projectedStandings['ForcastedWins'].round(2)
-
-    # add projected and current wins to total projection
-    totalWinProj = projectedStandings['CurrentWins'] + projectedStandings['ForcastedWins']
-    totalLossProj = projectedStandings['CurrentLosses'] + projectedStandings['ForcastedLosses']
-
-    # insert total win and loss projections
-    projectedStandings.insert(loc=1, column='TotalProjWins', value=totalWinProj)
-    projectedStandings.insert(loc=2, column='TotalProjLoss', value=totalLossProj)
-
-    # sort and reset index
-    projectedStandings = projectedStandings.sort_values(by='TotalProjWins', ascending=False)
-    projectedStandings = projectedStandings.reset_index(drop=True)
-
-    projectedStandings_prnt = projectedStandings[['Team','TotalProjWins','TotalProjLoss']]
-
-    if week >= 9:
-        # Merge in SOS
-        projectedStandings_prnt = projectedStandings_prnt.merge(sos, on='Team')
-
+    return expected_wins_df
 
 def gen_ai_summary():
     print("\nRetrieving and processing matchups...")
@@ -503,7 +469,7 @@ rankings = gen_power_rankings()
 expected_standings = gen_expected_standings(rankings)
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
-if week > 5:
+if week >= 5:
     playoff_prob = gen_playoff_prob()
 
 # Generate Luck Index
@@ -558,12 +524,11 @@ print(table(rankings, headers='keys', tablefmt='pipe', numalign='center')) # hav
 print('\n## Summary:\n')
 print(summary)
 
-# print("\n# EXPECTED STANDINGS (as of week ", week, ")")
-# league.printExpectedStandings(week)
-# print(table(projectedStandings_prnt, headers='keys', tablefmt='pipe', numalign='center'))
+print("\n## Projected Standings (as of week ", week, ")")
+print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
 
 if week >= 5:
-    print(f"\n## PLAYOFF PROBABILITIES (as of week {week}")
+    print("\n## Current Playoff Probabilities")
     print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
 print("\n## LUCK INDEX")
