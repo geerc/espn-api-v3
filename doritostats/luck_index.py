@@ -336,13 +336,13 @@ def get_weekly_luck_index(league: League, team: Team, week: int) -> float:
     """
     # Define the weights to apply to each factor
     factor_weights = {
-        "scheduling": 0.25,
-        "performance_vs_projection": 0.20,
-        "injuries_byes": 0.20,
-        "performance_vs_historical": 0.10,
-        "optimal_vs_actual": 0.10,
-        "optimal_vs_optimal": 0.10,
-        "margin_of_victory": 0.05,
+        "scheduling": 0.42,
+        "performance_vs_projection": 0.33,
+        # "injuries_byes": 0.20,
+        "performance_vs_historical": 0.17,
+        # "optimal_vs_actual": 0.10,
+        # "optimal_vs_optimal": 0.10,
+        "margin_of_victory": 0.08,
     }
 
     # Get the team's outcome for the given week

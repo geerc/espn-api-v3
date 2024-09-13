@@ -1,4 +1,11 @@
-
+'''
+TODO:
+1. After week 1 check that expected standings are lining up teams correctly when adding back to dataframe after simulation
+2. Update player values to pull from KTC
+3. Use player values to inform AI summary
+4. Create CRON job to run automatically
+5. Update args to default to current week if not specified
+'''
 from langchain_core.runnables import RunnableSequence
 
 import pandas as pd
@@ -19,11 +26,6 @@ import progressbar
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
 import numpy as np
-
-# parser = argparse.ArgumentParser()
-# parser.add_argument("week", help='Get week of the NFL season to run rankings for')
-# args = parser.parse_args()
-
 
 # Define dates/year
 year = datetime.now().year
@@ -224,21 +226,21 @@ def gen_power_rankings():
 
     print(power_rankings_df)
 
+    # Set index to start at 1
+    power_rankings_df = power_rankings_df.set_axis(range(1, len(power_rankings_df) + 1))
+
     return power_rankings_df
 
 def gen_ai_summary():
-    print("\nRetrieving and processing matchups...")
+    print("\n\tRetrieving and processing matchups...")
 
     # Retrieve all matchups for the given week
     matchups = league.box_scores(week=week)
 
-    # Create AI summary progress bar
-    bar_matchups = progressbar.ProgressBar(max_value=len(matchups))
-
     # Extract box score data
     box_scores_data = []
 
-    for i, matchup in enumerate(matchups):
+    for matchup in matchups:
         matchup_data = {
             "home_team": matchup.home_team.team_name,
             "home_score": matchup.home_score,
@@ -267,29 +269,25 @@ def gen_ai_summary():
         }
         box_scores_data.append(matchup_data)
 
-        # Update progress bar for each matchup processed
-        bar_matchups.update(i + 1)
-
     # Convert to JSON format
     box_scores_json = json.dumps(box_scores_data, indent=4)
 
-    print("\nGenerating summary with LLM...")
-
+    print("\n\tGenerating summary with LLM...")
 
     # Sample JSON data (replace with your actual JSON data)
-    json_data = box_scores_json
+    # json_data = box_scores_json
 
     # Setting up OpenAI model
     llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0, openai_api_key=api_key)
 
     # Define the prompt template for generating a newspaper-like summary
     prompt_template = PromptTemplate(
-        input_variables=["json_data"],
+        input_variables=["box_scores_json"],
         template="""
         Write a newspaper-style summary of the fantasy football matchups based on the following JSON data:
 
-        {json_data}
-
+        {box_scores_json}
+            
         The summary should include:
         - The names of the teams
         - The projected scores for each team
@@ -305,15 +303,8 @@ def gen_ai_summary():
         prompt_template | llm
     )
 
-    # Simulate LLM progress with progress bar
-    bar_llm = progressbar.ProgressBar(max_value=1)
-
     # Generate the newspaper-like summary
     result = llm_chain.invoke(input=box_scores_json)
-
-    # Simulate LLM generation time
-    time.sleep(2)
-    bar_llm.update(1)
 
     # return the result
     return result.content
@@ -325,6 +316,8 @@ rankings = gen_power_rankings()
 # Generate Expected Standings
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
+if week > 5:
+    playoff_prob = gen_playoff_prob()
 
 # Generate Luck Index
 print('\nGenerating Luck Index...')
@@ -338,7 +331,7 @@ for i, team in enumerate(teams):
         luck_index_value += luck_index.get_weekly_luck_index(league, team, luck_week)
 
     # append team's season long luck index to the list
-    season_luck_index.append([team, luck_index_value])
+    season_luck_index.append([team.team_name, luck_index_value])
 
     # reset luck index value
     luck_index_value = 0
@@ -346,8 +339,11 @@ for i, team in enumerate(teams):
     # Update the progress bar
     bar_luck_index.update(i + 1)
 
-# convert season long luck index list to pandas dataframe
+# convert season long luck index list to pandas dataframe, sort by 'Luck Index', and set index to start at 1
 season_luck_index = pd.DataFrame(season_luck_index, columns=['Team','Luck Index'])
+season_luck_index.sort_values(by='Luck Index', ascending=False, inplace=True, ignore_index=True)
+season_luck_index = season_luck_index.set_axis(range(1, len(season_luck_index)+1))
+
 
 # Generate AI Summary
 print('\n\nGenerating AI Summary...')
@@ -363,7 +359,7 @@ sys.stdout = open(filepath, "w")
 print("---")
 print("title: Week", str(week), year, "Report")
 print("date: ",datetime.now().date())
-print(f"image: /images/{year}week{week}.jpeg")
+print(f"image: /images/{year}week{week}.jpg")
 print("draft: true")
 print("---")
 
@@ -382,9 +378,9 @@ print(summary)
 # league.printExpectedStandings(week)
 # print(table(projectedStandings_prnt, headers='keys', tablefmt='pipe', numalign='center'))
 
-# if week >= 5:
-#     print("\n# PLAYOFF PROBABILITIES (as of week ", week, ")")
-#     print(table(projections, headers='keys', tablefmt='pipe', numalign='center'))
+if week >= 5:
+    print(f"\n## PLAYOFF PROBABILITIES (as of week {week}")
+    print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
 print("\n## LUCK INDEX")
 print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center'))
@@ -395,5 +391,8 @@ print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center
 # print("\n WEEK ", week, " POWER SCORE (CALC W/ LEAGUE AVERAGE SCORE)")
 # print(table(team_scores_prt, headers='keys', tablefmt='github', numalign='decimal'))
 
-# close text file
+# Close file and restore standard output
 sys.stdout.close()
+sys.stdout = sys.__stdout__
+
+print('\nDone!\n')
