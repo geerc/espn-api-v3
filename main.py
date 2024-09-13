@@ -427,9 +427,76 @@ def gen_playoff_prob():
 
     return projections
 
+def gen_expected_standings(power_rankings):
+    """ By comparing the current power score of a team to their remaining opponents, project wins and losses for the rest of the year"""
+    expected_wins = [] # empty list to be filled with # of expected wins for each team
+    sos = [] # strength of schedule list
+    print(f'Power Rankings: \n{power_rankings}')
+
+    for team in league.teams:
+        print(f'Team: {team.team_name}')
+
+        # Get the team's Power Score by matching the team name in the DataFrame
+        team_power_score = float(power_rankings.loc[power_rankings['Team'] == team.team_name, 'Power Score'].values[0])
+
+        print(f'{team.team_name} Power Score: {team_power_score}')
+
+        # Empty list to populate with the teams probability of winning each remaining matchup
+        win_prob_schedule = []
+
+        # Initialize strength of schedule to 0, will be average power score of remaining opponents
+        team_sos = 0
+
+        # Calculate team's win prob for each opp on schedule, only for remaining games
+        for week_num, opp in enumerate(team.schedule, start=1):
+            if week_num > week:  # Skip past games, only calculate for remaining weeks
+                # Get the current power score of the opponent
+                opp_power_score = float(
+                    power_rankings.loc[power_rankings['Team'] == opp.team_name, 'Power Score'].values[0])
+
+                # Compute the probability of the team winning as the team's share of the added power scores of both teams
+                win_prob = team_power_score / (opp_power_score + team_power_score)
+
+                # Add opponent's power score to SOS value
+                team_sos += opp_power_score
+
+                # Add probability to win this matchup to win prob schedule list
+                win_prob_schedule.append(win_prob)
+
+        print(f'Win Probabilities for remaining games for {team.team_name}:\n{win_prob_schedule}')
+
+        # Calculate a team's expected wins as the sum of it's win probabilities and current wins
+        team_expected_wins = round(sum(win_prob_schedule) + team.wins, 2)
+
+        # Calculate a team's expected losses as total games (15) - projected wins, then add current losses
+        team_expected_losses = 15 - team_expected_wins + team.losses
+
+        # Average SOS by remaining games
+        team_sos = team_sos / (15 - week)
+
+        # Append team name and expected wins to league wide expected wins list
+        expected_wins.append([team.team_name, team_expected_wins, team_expected_losses])
+
+        # Append team name and remaining sos to league wide sos list
+        sos.append(team_sos)
+
+    print(f'Expected wins list: {expected_wins}')
+    print(f'SOS list: {sos}')
+
+    # Convert expected wins and sos to Dataframes to join together
+    expected_wins_df = pd.DataFrame(expected_wins, columns=['Team','Projected Wins','Projected Losses'])
+    sos_df = pd.DataFrame(sos).round(2)
+
+    print(expected_wins_df.sort_values(by=['Projected Wins'], ascending=False))
+
+    # if it is week 9 or greater, join sos with expected wins
+    if week > 9:
+        expected_wins_df.merge(sos_df, on='Team')
+
+    return expected_wins_df
 
 def gen_ai_summary():
-    print("\n\tRetrieving and processing matchups...")
+    print("\nRetrieving and processing matchups...")
 
     # Retrieve all matchups for the given week
     matchups = league.box_scores(week=week)
@@ -511,10 +578,10 @@ print('\nGenerating Power Rankings...')
 rankings = gen_power_rankings()
 
 # Generate Expected Standings
-
+expected_standings = gen_expected_standings(rankings)
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
-if week > 5:
+if week >= 5:
     playoff_prob = gen_playoff_prob()
 
 # Generate Luck Index
@@ -555,9 +622,9 @@ sys.stdout = open(filepath, "w")
 
 # for the markdown files in blog
 print("---")
-print("title: Week", str(week), year, "Report")
-print("date: ",datetime.now().date())
-print(f"image: /images/{year}week{week}.jpg")
+print(f"title: Week {week} {year} Report")
+print(f"date: {datetime.now().date()}")
+print(f"image: /images/{year}week{week}.jpgg")
 print("draft: true")
 print("---")
 
@@ -572,12 +639,11 @@ print(table(rankings, headers='keys', tablefmt='pipe', numalign='center')) # hav
 print('\n## Summary:\n')
 print(summary)
 
-# print("\n# EXPECTED STANDINGS (as of week ", week, ")")
-# league.printExpectedStandings(week)
-# print(table(projectedStandings_prnt, headers='keys', tablefmt='pipe', numalign='center'))
+print("\n## Projected Standings (as of week ", week, ")")
+print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
 
 if week >= 5:
-    print(f"\n## PLAYOFF PROBABILITIES (as of week {week}")
+    print("\n## Current Playoff Probabilities")
     print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
 print("\n## LUCK INDEX")
