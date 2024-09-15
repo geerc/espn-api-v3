@@ -3,10 +3,23 @@ TODO:
 1. After week 1 check that expected standings are lining up teams correctly when adding back to dataframe after simulation
 2. Use player values to inform AI summary
 4. Create CRON job to run automatically
+5. Give LLM more/better information
+    1. Give/instruct to browse for news articles?
+
 """
 from langchain_core.runnables import RunnableSequence
 
+import playerID
+from authorize import Authorize
+from team import Team
+from player import Player
+from utils.building_utils import getUrl
+from itertools import chain
+
 import pandas as pd
+import numpy as np
+import requests
+import math
 from tabulate import tabulate as table
 import sys
 import argparse
