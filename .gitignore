@@ -1,6 +1,7 @@
 #.gitignore
 __pycache__/
 *.pyc
+.idea/workspace.xml
 
 # Enviornments
 .env
