@@ -4,7 +4,7 @@ TODO:
 2. Use player values to inform AI summary
 4. Create CRON job to run automatically
 5. Give LLM more/better information
-    1. Give/instruct to browse for news articles?
+    1. For each player, include in the json data link to fantasy pros page for LLM to browse for information
 
 """
 from langchain_core.runnables import RunnableSequence
