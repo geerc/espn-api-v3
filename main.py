@@ -9,13 +9,6 @@ TODO:
 """
 from langchain_core.runnables import RunnableSequence
 
-import playerID
-from authorize import Authorize
-from team import Team
-from player import Player
-from utils.building_utils import getUrl
-from itertools import chain
-
 import pandas as pd
 import numpy as np
 import requests
@@ -245,7 +238,7 @@ def gen_power_rankings():
     # Set index to start at 1
     power_rankings_df = power_rankings_df.set_axis(range(1, len(power_rankings_df) + 1))
 
-    return power_rankings_df
+    return power_rankings_df, final_df
 
 def gen_playoff_prob():
     # Proj wins and losses for rest of season
@@ -501,11 +494,47 @@ def gen_expected_standings(power_rankings):
     # Set index to start at 1
     expected_wins_df = expected_wins_df.set_axis(range(1, len(expected_wins_df) + 1))
 
-
     return expected_wins_df
 
-def gen_ai_summary():
-    print("\nRetrieving and processing matchups...")
+def gen_ai_summary(values):
+    print("\n\tRetrieving and processing matchups...")
+
+    # Creat dataframe of fantasy pros names
+    names = pd.read_csv('/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/fantasy_pros_names.csv')
+    names = pd.DataFrame(names, columns=['Name'])
+
+    urls = []
+    # Add formated url with each players name
+    # Iterate over each player
+    for player in names['Name']:
+        # Split the full name into parts and join them with hyphens, all in lowercase
+        formatted_name = '-'.join(player.split()).lower()
+
+        # Create the URL with f-string
+        url = f"https://www.fantasypros.com/nfl/players/{formatted_name}.php"
+
+        # Append or store the URL
+        urls.append([player, url])
+
+    # Convert urls list to DataFrame
+    urls = pd.DataFrame(urls, columns=['Name','url'])
+
+    # Create a dictionary mapping player names to their URLs
+    name_to_url = dict(zip(urls['Name'], urls['url']))
+
+    # Merge 'values' DataFrame with 'urls' to get player values
+    values = pd.merge(values, urls, left_on='Player Name', right_on='Name', how='outer')
+
+    # prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week-1}.csv')
+    prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week1.csv') # for testing
+    values = pd.merge(values, prev_values, on='Player Name', suffixes=('', '_prev'))
+    values.drop(['Name','Pos','Team','Unnamed: 0', 'Pos_prev'], axis=1, inplace=True)
+
+    # calculate change in values from last week to this  week
+    values['change_value'] = values['Value'] - values['Value_prev']
+
+    # Create a dictionary mapping player names to their values
+    name_to_value = dict(zip(values['Player Name'], values['change_value']))\
 
     # Retrieve all matchups for the given week
     matchups = league.box_scores(week=week)
@@ -527,7 +556,9 @@ def gen_ai_summary():
                     "slot_position": player.slot_position,
                     "position": player.position,
                     "points": player.points,
-                    "projected_points": player.projected_points
+                    "projected_points": player.projected_points,
+                    "url": name_to_url.get(player.name, "URL not found"),  # Lookup the URL from the dictionary
+                    "value_change": name_to_value.get(player.name, "Value not found")  # Lookup the value from the dictionary
                 } for player in matchup.home_lineup
             ],
             "away_players": [
@@ -536,7 +567,9 @@ def gen_ai_summary():
                     "position": player.position,
                     "slot_position": player.slot_position,
                     "points": player.points,
-                    "projected_points": player.projected_points
+                    "projected_points": player.projected_points,
+                    "url": name_to_url.get(player.name, "URL not found"),  # Lookup the URL from the dictionary
+                    "value_change": name_to_value.get(player.name, "Value not found")  # Lookup the value from the dictionary
                 } for player in matchup.away_lineup
             ]
         }
@@ -551,7 +584,7 @@ def gen_ai_summary():
     # json_data = box_scores_json
 
     # Setting up OpenAI model
-    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0, openai_api_key=api_key)
+    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.5, openai_api_key=api_key)
 
     # Define the prompt template for generating a newspaper-like summary
     prompt_template = PromptTemplate(
@@ -563,9 +596,13 @@ def gen_ai_summary():
             
         The summary should include:
         - The names of the teams
+        - Which team won the matchup and if it was close.
+        
+        The summary can also include:
         - The projected scores for each team
-        - Key players and their projected points
-        - Any notable points or highlights
+        - Player's that greatly over or under performed their projected points
+        - If a player with a 'BE' in 'slot_position' scored 10 or more points than a player on their team with the same 'position', mention it, and roast the Team for bad lineup management.
+        - If a players 'value_change' is greater than  100, or less than -100, browse the players url and include some relevant recent news about that player.
 
         Write in a formal, engaging newspaper tone.
         """
@@ -584,7 +621,7 @@ def gen_ai_summary():
 
 # Generate Power Rankings
 print('\nGenerating Power Rankings...')
-rankings = gen_power_rankings()
+rankings, player_values = gen_power_rankings()
 
 # Generate Expected Standings
 expected_standings = gen_expected_standings(rankings)
@@ -621,7 +658,7 @@ season_luck_index = season_luck_index.set_axis(range(1, len(season_luck_index)+1
 
 # Generate AI Summary
 print('\n\nGenerating AI Summary...')
-summary = gen_ai_summary()
+summary = gen_ai_summary(player_values)
 
 # Print everything
 print('\nWriting to markdown file...')
