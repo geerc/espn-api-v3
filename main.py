@@ -525,16 +525,22 @@ def gen_ai_summary(values):
     # Merge 'values' DataFrame with 'urls' to get player values
     values = pd.merge(values, urls, left_on='Player Name', right_on='Name', how='outer')
 
-    # prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week-1}.csv')
-    prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week1.csv') # for testing
-    values = pd.merge(values, prev_values, on='Player Name', suffixes=('', '_prev'))
-    values.drop(['Name','Pos','Team','Unnamed: 0', 'Pos_prev'], axis=1, inplace=True)
+    if week > 1:
+        # get player values from last week and merge with current values and urls
+        prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week-1}.csv')
+        values = pd.merge(values, prev_values, on='Player Name', suffixes=('', '_prev'))
 
-    # calculate change in values from last week to this  week
-    values['change_value'] = values['Value'] - values['Value_prev']
+        # drop unnecessary columns from merge
+        values.drop(['Name','Pos','Team','Unnamed: 0', 'Pos_prev'], axis=1, inplace=True)
 
-    # Create a dictionary mapping player names to their values
-    name_to_value = dict(zip(values['Player Name'], values['change_value']))\
+        # calculate change in values from last week to this  week
+        values['change_value'] = values['Value'] - values['Value_prev']
+
+        # Create a dictionary mapping player names to their values
+        name_to_value = dict(zip(values['Player Name'], values['change_value']))
+    else:
+        # Create a dictionary mapping player names to their values
+        name_to_value = dict(zip(values['Player Name'], values['Value']))
 
     # Retrieve all matchups for the given week
     matchups = league.box_scores(week=week)
@@ -584,7 +590,11 @@ def gen_ai_summary(values):
     # json_data = box_scores_json
 
     # Setting up OpenAI model
-    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.5, openai_api_key=api_key)
+    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.25, openai_api_key=api_key)
+
+    # For repeated testing calls
+    # llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.25, openai_api_key=api_key)
+
 
     # Define the prompt template for generating a newspaper-like summary
     prompt_template = PromptTemplate(
