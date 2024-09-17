@@ -79,8 +79,8 @@ def fuzzy_merge(df1, df2, key1, key2, threshold=90, limit=1):
 
     return merged_df
 
-def gen_power_rankings():
-    power_rankings = league.power_rankings(week=week)
+def gen_power_rankings(pr_week):
+    power_rankings = league.power_rankings(week=pr_week)
 
     # Extract team names
     extracted_team_names = [(record, re.sub(r'Team\((.*?)\)', r'\1', str(team))) #convert team object to string
@@ -89,56 +89,13 @@ def gen_power_rankings():
     # Convert to Dataframe
     power_rankings = pd.DataFrame(extracted_team_names, columns=['Power Score','Team'])
 
-
     # Switch Score and Team Name cols
     power_rankings_df = power_rankings.reindex(columns=['Team', 'Power Score'])
-
-    if week > 1:
-        # Generate last weeks' power rankings for comparison
-        prev_power_rankings = league.power_rankings(week=week-1)
-
-        # Extract team names
-        extracted_team_names = [(record, re.sub(r'Team\((.*?)\)', r'\1', str(team)))  # convert team object to string
-                                for record, team in prev_power_rankings]
-
-        # Convert to Dataframe
-        prev_power_rankings_df = pd.DataFrame(extracted_team_names, columns=['Power Score', 'Team'])
-
-        # Switch Score and Team Name cols
-        prev_power_rankings_df = prev_power_rankings_df.reindex(columns=['Team', 'Power Score'])
-
-        diffs = []
-        emojis = []
-
-        print('This week: \n', power_rankings_df)
-        print('Last week: \n', prev_power_rankings_df)
-
-        for team in league.teams:
-            # print(team)
-            tw_rank = power_rankings_df[power_rankings_df['Team'] == team.team_name].index.values  # get this week's rank
-            # print(f'{team.team_name} rank this week: {tw_rank}')
-            lw_rank = prev_power_rankings_df[prev_power_rankings_df['Team'] == team.team_name].index.values  # get last weeks' rank
-            # print(f'{team.team_name} rank last week: {lw_rank}')
-            diff = lw_rank - tw_rank  # find the difference between last week to this week
-            # print(f'{team.team_name} weekly change: {diff}')
-            diff = int(diff.item())  # turn into list to iterate over
-            diffs.append(diff)  # append to the list
-
-        # iterate over diffs list and edit values to include up/down arrow emoji and the number of spots the team moved
-        for item in diffs:
-            if item > 0:
-                emojis.append("**<span style=\"color: green;\">⬆️ " + str(abs(item)) + " </span>**")
-            elif item < 0:
-                emojis.append("**<span style=\"color: red;\">⬇️ " + str(abs(item)) + " </span>**")
-            elif item == 0:
-                emojis.append("")  # adds a index of nothing for teams that didn't move
-
-        power_rankings_df.insert(loc=1, column='Weekly Change', value=emojis)  # insert the weekly change column
 
     # Integrate player values into Power Rankings
 
     # Load players values for the week
-    player_values = pd.read_csv(f'/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
+    player_values = pd.read_csv(f'/Users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{pr_week}.csv')
 
     # Generate DataFrame of Team Rosters
     league_rosters = []
@@ -201,7 +158,7 @@ def gen_power_rankings():
     b = -0.1147
 
     # Calculate the weight for the 'Value' column
-    value_weight = round(a * np.exp(b * week), 2)
+    value_weight = round(a * np.exp(b * pr_week), 2)
 
     # Calculate the weight for 'Power Score'
     power_score_weight = 1 - value_weight
@@ -223,14 +180,18 @@ def gen_power_rankings():
     # Divide Performance score by 100 for readability
     power_rankings_df['KTC Value'] = round(power_rankings_df['KTC Value'] / 100, 2)
 
-    # Multiply power  score by 100, round to 2 decimals
-    power_rankings_df['Power Score'] = round(power_rankings_df['Power Score'] * 100, 2)
+    # Multiply power  score by 100, round to whole number
+    power_rankings_df['Power Score'] = round(power_rankings_df['Power Score'] * 100, 0)
 
     # Rank 'Performance Score' in descending order
-    power_rankings_df['Performance Rank'] = power_rankings_df['Performance Score'].rank(ascending=False)
+    power_rankings_df['Performance Rank'] = power_rankings_df['Performance Score'].rank(ascending=False, method='min')
 
     # Rank 'KTC Value' in descending order
-    power_rankings_df['KTC Value Rank'] = power_rankings_df['KTC Value'].rank(ascending=False)
+    power_rankings_df['KTC Value Rank'] = power_rankings_df['KTC Value'].rank(ascending=False, method='min')
+
+    # Cast to integers
+    power_rankings_df['Performance Rank'] = power_rankings_df['Performance Rank'].astype(int)
+    power_rankings_df['KTC Value Rank'] = power_rankings_df['KTC Value Rank'].astype(int)
 
     # Drop the original 'Performance Score' and 'KTC Value' columns
     power_rankings_df = power_rankings_df.drop(columns=['Performance Score', 'KTC Value'])
@@ -239,6 +200,55 @@ def gen_power_rankings():
     power_rankings_df = power_rankings_df.set_axis(range(1, len(power_rankings_df) + 1))
 
     return power_rankings_df, final_df
+
+def weekly_change(power_rankings, prev_power_rankings):
+    diffs = []
+    emojis = []
+
+    for team in league.teams:
+        # get this week's rank
+        tw_rank = power_rankings[power_rankings['Team'] == team.team_name].index.values
+
+        # get last weeks' rank
+        lw_rank = prev_power_rankings[prev_power_rankings['Team'] == team.team_name].index.values
+
+        # find the difference between last week to this week
+        diff = lw_rank - tw_rank
+
+        # turn into list to iterate over
+        diff = int(diff.item())
+
+        # append to the list
+        diffs.append([team.team_name, diff])
+
+    # Iterate over the list and modify the integer values
+    for element in diffs:
+        # Check the second item in each sub-list (the integer)
+        if isinstance(element[1], int):
+            if element[1] > 0:
+                element[1] = f"**<span style=\"color: green;\">⬆️ {abs(element[1])} </span>**"
+            elif element[1] < 0:
+                element[1] = f"**<span style=\"color: red;\">⬇️ {abs(element[1])} </span>**"
+            elif element[1] == 0:
+                element[1] = ""  # Make it an empty string for no change
+
+    # convert to a dataframe to join with power rankings
+    weekly_change_df = pd.DataFrame(diffs, columns=['Team', 'Weekly Change'])
+
+    # join rankings with weekly change
+    power_rankings = pd.merge(power_rankings, weekly_change_df, on='Team', how='outer')
+
+    # Define the desired order of columns
+    new_column_order = ['Team', 'Power Score', 'Weekly Change', 'Performance Rank', 'KTC Value Rank']
+
+    # Reorder the columns
+    power_rankings = power_rankings[new_column_order]
+
+    # Set index to start at 1
+    power_rankings = power_rankings.set_axis(range(1, len(power_rankings) + 1))
+
+
+    return power_rankings
 
 def gen_playoff_prob():
     # Proj wins and losses for rest of season
@@ -608,10 +618,10 @@ def gen_ai_summary(values):
     # json_data = box_scores_json
 
     # Setting up OpenAI model
-    # llm = ChatOpenAI(model_name="gpt-4o", temperature=0.25, openai_api_key=api_key)
+    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.25, openai_api_key=api_key)
 
     # For repeated testing calls
-    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.25, openai_api_key=api_key)
+    # llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.25, openai_api_key=api_key)
 
 
     # Define the prompt template for generating a newspaper-like summary
@@ -622,16 +632,16 @@ def gen_ai_summary(values):
 
         {box_scores_json}
             
-        The summary should include:
+        The summaries should include:
         - The names of the teams
         - Which team won the matchup and if it was close.
         - If a players 'value_change' is greater than  100, or less than -100, browse the players url and include some relevant recent news about that player.
 
         
-        The summary can also include:
+        The summaries can also include:
         - The projected scores for each team
         - Player's that greatly over or under performed their projected points
-        - If a player with a 'BE' in 'slot_position' scored 10 or more points than a player on their team with the same 'position', mention it, and roast the Team for bad lineup management.
+        - Performance comparison of a team's players with the same 'position'. Call out when a player with slot_position equal to 'BE' scored 10 or points than a player with the same 'position' in the starting lineup.
 
         Write in a formal, engaging newspaper tone.
         """
@@ -650,7 +660,17 @@ def gen_ai_summary(values):
 
 # Generate Power Rankings
 print('\nGenerating Power Rankings...')
-rankings, player_values = gen_power_rankings()
+
+rankings, player_values = gen_power_rankings(week)
+print(f'\n\tWeek {week} Power Rankings:')
+print('\n', table(rankings, headers='keys', tablefmt='pipe', numalign='center'))
+
+prev_rankings, prev_values = gen_power_rankings(week-1)
+print(f'\n\tWeek {week-1} Power Rankings:')
+print('\n', table(prev_rankings, headers='keys', tablefmt='pipe', numalign='center'))
+
+print('\n\tCalculating weekly change...')
+weekly_change_rankings = weekly_change(rankings, prev_rankings)
 
 # Generate Expected Standings
 expected_standings = gen_expected_standings(rankings)
@@ -700,35 +720,27 @@ print("---")
 print(f"title: Week {week} {year} Report")
 print(f"date: {datetime.now().date()}")
 print(f"image: /images/{year}week{week}.jpg")
-print("draft: true")
+print("draft: false")
 print("---")
 
 print("<!-- excerpt -->")
 
 print("\n# POWER RANKINGS\n")
 # Value un-informed
-print(table(rankings, headers='keys', tablefmt='pipe', numalign='center')) # have to manually center all play % because its not a number
-
-# print(table(Value_Power_Rankings_print, headers='keys',tablefmt='pipe', numalign='center')) # have to manually center all play % and weekly change because not an int
+print(table(weekly_change_rankings, headers='keys', tablefmt='pipe', colalign=('left','center','center','center','center')) # have to manually center all play % because its not a number
 
 print('\n## Summary:\n')
 print(summary)
-
-print("\n## Projected Standings (as of week ", week, ")")
-print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
 
 if week >= 5:
     print("\n## Current Playoff Probabilities")
     print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
+print(f"\n## Projected Standings (as of week {week})")
+print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
+
 print("\n## LUCK INDEX")
 print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center'))
-
-# print("\n WEEK ", week, " ALL PLAY STANDINGS (SORT BY WINS)")
-# print(table(allplay, headers='keys', tablefmt='github', numalign='decimal'))
-
-# print("\n WEEK ", week, " POWER SCORE (CALC W/ LEAGUE AVERAGE SCORE)")
-# print(table(team_scores_prt, headers='keys', tablefmt='github', numalign='decimal'))
 
 # Close file and restore standard output
 sys.stdout.close()
