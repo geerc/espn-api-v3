@@ -499,7 +499,7 @@ def gen_expected_standings(power_rankings):
 def gen_ai_summary(values):
     print("\n\tRetrieving and processing matchups...")
 
-    # Creat dataframe of fantasy pros names
+    # Creat dataframe of fantasy pros names to generate player urls for news
     names = pd.read_csv('/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/fantasy_pros_names.csv')
     names = pd.DataFrame(names, columns=['Name'])
 
@@ -519,28 +519,46 @@ def gen_ai_summary(values):
     # Convert urls list to DataFrame
     urls = pd.DataFrame(urls, columns=['Name','url'])
 
-    # Create a dictionary mapping player names to their URLs
-    name_to_url = dict(zip(urls['Name'], urls['url']))
+    # Fuzzy merge 'values' DataFrame with 'urls' to get player values
+    values = fuzzy_merge(values, urls, 'Player Name', 'Name', threshold=80)
 
-    # Merge 'values' DataFrame with 'urls' to get player values
-    values = pd.merge(values, urls, left_on='Player Name', right_on='Name', how='outer')
+    # Fill 'Name' NaN with 'Player Name'
+    values['Name'].fillna(values['Player Name'], inplace=True)
+
+    # drop unnecessary columns
+    values.drop(['Team', 'Best Match', 'Match Score'], axis=1, inplace=True)
 
     if week > 1:
         # get player values from last week and merge with current values and urls
         prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week-1}.csv')
-        values = pd.merge(values, prev_values, on='Player Name', suffixes=('', '_prev'))
 
-        # drop unnecessary columns from merge
-        values.drop(['Name','Pos','Team','Unnamed: 0', 'Pos_prev'], axis=1, inplace=True)
+        # convert to df
+        prev_values = pd.DataFrame(prev_values, columns=['Player Name', 'Pos', 'Value'])
+
+        # fuzzy merge on 'Name' and 'Player Name'
+        values = fuzzy_merge(values, prev_values, 'Name', 'Player Name', threshold=80)
+
+        # drop unnecessary columns from merge and rename value_x and value_y to be clear
+        values.drop(['Player Name_y', 'Pos_x', 'Pos_y', 'Best Match', 'Match Score'], axis=1, inplace=True)
+        values.rename(columns={'Player Name_x':'Player Name', 'Value_x':'value', 'Value_y':'value_prev'}, inplace=True)
 
         # calculate change in values from last week to this  week
-        values['change_value'] = values['Value'] - values['Value_prev']
+        values['change_value'] = values['value'] - values['value_prev']
+
+        # drop raw value data
+        values.drop(['value', 'value_prev'], axis=1, inplace=True)
 
         # Create a dictionary mapping player names to their values
         name_to_value = dict(zip(values['Player Name'], values['change_value']))
+
+        # Create a dictionary mapping player names to their URLs
+        name_to_url = dict(zip(values['Player Name'], values['url']))
     else:
         # Create a dictionary mapping player names to their values
         name_to_value = dict(zip(values['Player Name'], values['Value']))
+
+        # Create a dictionary mapping player names to their URLs
+        name_to_url = dict(zip(urls['Player Name'], urls['url']))
 
     # Retrieve all matchups for the given week
     matchups = league.box_scores(week=week)
@@ -590,10 +608,10 @@ def gen_ai_summary(values):
     # json_data = box_scores_json
 
     # Setting up OpenAI model
-    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.25, openai_api_key=api_key)
+    # llm = ChatOpenAI(model_name="gpt-4o", temperature=0.25, openai_api_key=api_key)
 
     # For repeated testing calls
-    # llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.25, openai_api_key=api_key)
+    llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.25, openai_api_key=api_key)
 
 
     # Define the prompt template for generating a newspaper-like summary
@@ -607,12 +625,13 @@ def gen_ai_summary(values):
         The summary should include:
         - The names of the teams
         - Which team won the matchup and if it was close.
+        - If a players 'value_change' is greater than  100, or less than -100, browse the players url and include some relevant recent news about that player.
+
         
         The summary can also include:
         - The projected scores for each team
         - Player's that greatly over or under performed their projected points
         - If a player with a 'BE' in 'slot_position' scored 10 or more points than a player on their team with the same 'position', mention it, and roast the Team for bad lineup management.
-        - If a players 'value_change' is greater than  100, or less than -100, browse the players url and include some relevant recent news about that player.
 
         Write in a formal, engaging newspaper tone.
         """
@@ -680,7 +699,7 @@ sys.stdout = open(filepath, "w")
 print("---")
 print(f"title: Week {week} {year} Report")
 print(f"date: {datetime.now().date()}")
-print(f"image: /images/{year}week{week}.jpgg")
+print(f"image: /images/{year}week{week}.jpg")
 print("draft: true")
 print("---")
 
