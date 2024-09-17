@@ -254,7 +254,7 @@ def gen_playoff_prob():
     # Proj wins and losses for rest of season
 
     # MONTE CARLO PLAYOFF PROBABILITIES
-    print('\nGenerating Monte Carlo Playoff Probabilities...')
+    # print('\nGenerating Monte Carlo Playoff Probabilities...')
 
     # number of random season's to simulate
     simulations = 100000
@@ -661,22 +661,25 @@ def gen_ai_summary(values):
 # Generate Power Rankings
 print('\nGenerating Power Rankings...')
 
-rankings, player_values = gen_power_rankings(week)
+rankings, team_values = gen_power_rankings(week)
 print(f'\n\tWeek {week} Power Rankings:')
 print('\n', table(rankings, headers='keys', tablefmt='pipe', numalign='center'))
 
-prev_rankings, prev_values = gen_power_rankings(week-1)
-print(f'\n\tWeek {week-1} Power Rankings:')
-print('\n', table(prev_rankings, headers='keys', tablefmt='pipe', numalign='center'))
+if week > 1:
+    prev_rankings, prev_team_values = gen_power_rankings(week-1)
+    print(f'\n\tWeek {week-1} Power Rankings:')
+    print('\n', table(prev_rankings, headers='keys', tablefmt='pipe', numalign='center'))
 
-print('\n\tCalculating weekly change...')
-weekly_change_rankings = weekly_change(rankings, prev_rankings)
+    print('\n\tCalculating weekly change...')
+    weekly_change_rankings = weekly_change(rankings, prev_rankings)
 
 # Generate Expected Standings
+print('\nGenerating expected standings...')
 expected_standings = gen_expected_standings(rankings)
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
 if week >= 5:
+    print('Generating playoff probabilities...')
     playoff_prob = gen_playoff_prob()
 
 # Generate Luck Index
@@ -701,6 +704,7 @@ for i, team in enumerate(teams):
 
 # convert season long luck index list to pandas dataframe, sort by 'Luck Index', and set index to start at 1
 season_luck_index = pd.DataFrame(season_luck_index, columns=['Team','Luck Index'])
+season_luck_index['Luck Index'] = round(season_luck_index['Luck Index'],2 )
 season_luck_index.sort_values(by='Luck Index', ascending=False, inplace=True, ignore_index=True)
 season_luck_index = season_luck_index.set_axis(range(1, len(season_luck_index)+1))
 
