@@ -1,18 +1,10 @@
 """
 TODO:
-1. After week 1 check that expected standings are lining up teams correctly when adding back to dataframe after simulation
-2. Use player values to inform AI summary
-4. Create CRON job to run automatically
-5. Give LLM more/better information
-    1. For each player, include in the json data link to fantasy pros page for LLM to browse for information
-
+- Create CRON job to run automatically
 """
 from langchain_core.runnables import RunnableSequence
 
 import pandas as pd
-import numpy as np
-import requests
-import math
 from tabulate import tabulate as table
 import sys
 import argparse
@@ -25,7 +17,6 @@ from langchain_openai import ChatOpenAI
 import os
 from dotenv import load_dotenv
 from doritostats import luck_index
-import time
 import progressbar
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
