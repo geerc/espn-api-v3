@@ -121,7 +121,7 @@ def gen_power_rankings(pr_week):
 
     # Check for rostered players without exact value matches
     roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
-    print(f'\n\tCheck for rostered players without exact matches:\n\n{roster_check}')
+    print(f'\n\tCheck for rostered players without exact matches (Week {pr_week}:\n\n{roster_check}')
 
     # Group by 'Team' and 'Position', summing 'Value'
     team_pos_values = final_df.groupby(['Team', 'Pos'], as_index=False)['Value'].sum()
@@ -497,12 +497,15 @@ def gen_expected_standings(power_rankings):
 
     return expected_wins_df
 
-def gen_ai_summary(values):
+def gen_ai_summary():
     print("\n\tRetrieving and processing matchups...")
 
-    # Creat dataframe of fantasy pros names to generate player urls for news
+    # Create dataframe of fantasy pros names to generate player urls for news
     names = pd.read_csv('/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/fantasy_pros_names.csv')
     names = pd.DataFrame(names, columns=['Name'])
+
+    # load player_values data
+    values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
 
     urls = []
     # Add formated url with each players name
@@ -527,7 +530,7 @@ def gen_ai_summary(values):
     values['Name'].fillna(values['Player Name'], inplace=True)
 
     # drop unnecessary columns
-    values.drop(['Team', 'Best Match', 'Match Score'], axis=1, inplace=True)
+    values.drop(['Best Match', 'Match Score'], axis=1, inplace=True)
 
     if week > 1:
         # get player values from last week and merge with current values and urls
@@ -609,7 +612,7 @@ def gen_ai_summary(values):
     # json_data = box_scores_json
 
     # Setting up OpenAI model
-    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.25, openai_api_key=api_key)
+    llm = ChatOpenAI(model_name="gpt-4o", temperature=0.4, openai_api_key=api_key)
 
     # For repeated testing calls
     # llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.25, openai_api_key=api_key)
@@ -622,17 +625,19 @@ def gen_ai_summary(values):
         Write a newspaper-style summary of the fantasy football matchups based on the following JSON data:
 
         {box_scores_json}
+        
+        Important things to know:
+        - If a players 'slot_position' is equal to 'BE' or 'IR', then that player was on the team's bench. Otherwise, they were in the starting lineup
             
-        The summaries should include:
+        The summary should include:
         - The names of the teams
         - Which team won the matchup and if it was close.
         - If a players 'value_change' is greater than  100, or less than -100, browse the players url and include some relevant recent news about that player.
-
+        - Performance comparison of a team's players with the same 'position'. Call out when a player on the bench scored 10 or points than a player with the same 'position' in the starting lineup.
         
-        The summaries can also include:
+        The summary can also include:
         - The projected scores for each team
-        - Player's that greatly over or under performed their projected points
-        - Performance comparison of a team's players with the same 'position'. Call out when a player with slot_position equal to 'BE' scored 10 or points than a player with the same 'position' in the starting lineup.
+        - Players in the starting lineup that greatly over or under performed their projected points
 
         Write in a formal, engaging newspaper tone.
         """
@@ -653,8 +658,6 @@ def gen_ai_summary(values):
 print('\nGenerating Power Rankings...')
 
 rankings, team_values = gen_power_rankings(week)
-print(f'\n\tWeek {week} Power Rankings:')
-print('\n', table(rankings, headers='keys', tablefmt='pipe', numalign='center'))
 
 if week > 1:
     prev_rankings, prev_team_values = gen_power_rankings(week-1)
@@ -702,7 +705,7 @@ season_luck_index = season_luck_index.set_axis(range(1, len(season_luck_index)+1
 
 # Generate AI Summary
 print('\n\nGenerating AI Summary...')
-summary = gen_ai_summary(player_values)
+summary = gen_ai_summary()
 
 # Print everything
 print('\nWriting to markdown file...')
@@ -722,7 +725,7 @@ print("<!-- excerpt -->")
 
 print("\n# POWER RANKINGS\n")
 # Value un-informed
-print(table(weekly_change_rankings, headers='keys', tablefmt='pipe', colalign=('left','center','center','center','center')) # have to manually center all play % because its not a number
+print(table(weekly_change_rankings, headers='keys', tablefmt='pipe', colalign=('center', 'left','center','center','center','center'))) # have to manually center all play % because its not a number
 
 print('\n## Summary:\n')
 print(summary)
