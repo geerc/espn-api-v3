@@ -632,8 +632,8 @@ def gen_ai_summary():
         The summary should include:
         - The names of the teams
         - Which team won the matchup and if it was close.
-        - If a players 'value_change' is greater than  100, or less than -100, browse the players url and include some relevant recent news about that player.
-        - Performance comparison of a team's players with the same 'position'. Call out when a player on the bench scored 10 or points than a player with the same 'position' in the starting lineup.
+        - If a players 'value_change' is greater than  100, or less than -100, browse 'url' for that player. The 'url' web page will contain recent news about that player to provide insights about him. Include those insights in the recap.
+        - Performance comparison of a team's players with the same 'position'. Call out when a player on the bench scored more points than a player with the same 'position' in the starting lineup.
         
         The summary can also include:
         - The projected scores for each team
@@ -661,8 +661,7 @@ rankings, team_values = gen_power_rankings(week)
 
 if week > 1:
     prev_rankings, prev_team_values = gen_power_rankings(week-1)
-    print(f'\n\tWeek {week-1} Power Rankings:')
-    print('\n', table(prev_rankings, headers='keys', tablefmt='pipe', numalign='center'))
+    print('\nGenerating Last Week\'s Power Rankings...')
 
     print('\n\tCalculating weekly change...')
     weekly_change_rankings = weekly_change(rankings, prev_rankings)
@@ -727,8 +726,7 @@ print("\n# POWER RANKINGS\n")
 # Value un-informed
 print(table(weekly_change_rankings, headers='keys', tablefmt='pipe', colalign=('center', 'left','center','center','center','center'))) # have to manually center all play % because its not a number
 
-print('\n## Summary:\n')
-print(summary)
+print('\n', summary)
 
 if week >= 5:
     print("\n## Current Playoff Probabilities")
