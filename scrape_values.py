@@ -73,6 +73,9 @@ def scrape_redraft_values(week):
                 # Extract player name from <a> tag
                 player_name = player_info.find('a').get_text(strip=True)
 
+                # Extract player's team from <span> tag
+                player_team = player_info.find('span', class_='player-team').get_text(strip=True)
+
                 # Extract player position and value
                 player_pos = row.find('p', class_='position').get_text(strip=True)
                 player_value = row.find('div', class_='value').get_text(strip=True)
@@ -81,14 +84,15 @@ def scrape_redraft_values(week):
                 players.append({
                     'Player Name': player_name,
                     'Pos': player_pos,
-                    'Value': player_value
+                    'Value': player_value,
+                    'NFL_Team': player_team
                 })
 
                 # Update progress bar
                 pbar.update(1)
 
     # Convert to Pandas DF
-    players_df = pd.DataFrame(players, columns=['Player Name','Pos','Value'])
+    players_df = pd.DataFrame(players, columns=['Player Name','Pos','Value', 'NFL_Team'])
 
     return players_df
 
@@ -125,8 +129,11 @@ def scrape_dynasty_values(week):
             for row in player_rows:
                 player_info = row.find('div', class_='player-name')
 
-                # Extract player name from <a> tag
+                # Extract player name from <a> tag and nfl team from <span> tag
                 player_name = player_info.find('a').get_text(strip=True)
+
+                # Extract player's team from <span> tag
+                player_team = player_info.find('span', class_='player-team').get_text(strip=True)
 
                 # Extract player position and value
                 player_pos = row.find('p', class_='position').get_text(strip=True)
@@ -136,14 +143,15 @@ def scrape_dynasty_values(week):
                 dynasty_players.append({
                     'Player Name': player_name,
                     'Pos': player_pos,
-                    'Value': player_value
+                    'Value': player_value,
+                    'NFL_Team': player_team
                 })
 
                 # Update progress bar
                 pbar.update(1)
 
         # Convert dynasty values to Pandas Dataframe
-        dynasty_values = pd.DataFrame(dynasty_players, columns=['Player Name','Pos','Value'])
+        dynasty_values = pd.DataFrame(dynasty_players, columns=['Player Name','Pos','Value', 'NFL_Team'])
 
         # Convert 'Value' to numeric, forcing errors to NaN
         dynasty_values['Value'] = pd.to_numeric(dynasty_values['Value'].str.replace(',', '').str.replace('$', ''), errors='coerce')
@@ -165,9 +173,11 @@ def merge_vales(redraft, dynasty, week):
     # Fill NaN values in Value_redraft and Pos_redraft with Value and Pos from unmatched rows
     final_df['Value'] = final_df['Value_redraft'].fillna(final_df['Value'])
     final_df['Pos'] = final_df['Pos_redraft'].fillna(final_df['Pos'])
+    final_df['NFL_Team'] = final_df['NFL_Team'].fillna(final_df['NFL_Team_dynasty'])
+    final_df['NFL_Team'] = final_df['NFL_Team'].fillna(final_df['NFL_Team_redraft'])
 
     # Select only the required columns
-    final_df = final_df[['Player Name', 'Pos', 'Value']]
+    final_df = final_df[['Player Name', 'Pos', 'Value', 'NFL_Team']]
 
     return final_df
 
@@ -184,6 +194,6 @@ merged_values = merge_vales(redraft_values, dynasty_values, week)
 print('Merged Values:\n', merged_values)
 
 # Write to a CSV file
-merged_values[['Player Name', 'Pos', 'Value']].to_csv(path_or_buf=f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
+merged_values[['Player Name', 'Pos', 'Value', 'NFL_Team']].to_csv(path_or_buf=f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
 
 
