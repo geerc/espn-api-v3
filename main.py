@@ -48,25 +48,35 @@ print(league, "\n", f'Week {week}')
 teams = league.teams
 
 
-def fuzzy_merge(df1, df2, key1, key2, threshold=90, limit=1):
+def fuzzy_merge(df1, df2, key1, key2, key_team1, key_team2, threshold=90, limit=1):
     """
-    Perform fuzzy merge between two DataFrames based on the similarity of the values in key1 and key2.
+    Perform fuzzy merge between two DataFrames based on the similarity of the values in key1, key_team1 and key2, key_team2.
     Parameters:
     - df1: First DataFrame.
     - df2: Second DataFrame.
-    - key1: Column in df1 to match.
-    - key2: Column in df2 to match.
+    - key1: Column in df1 to match player name.
+    - key2: Column in df2 to match player name.
+    - key_team1: Column in df1 to match NFL team.
+    - key_team2: Column in df2 to match NFL team.
     - threshold: Similarity threshold (0-100).
     - limit: Maximum number of matches to return per key.
     """
-    matches = df1[key1].apply(
-        lambda x: process.extractOne(x, df2[key2], scorer=fuzz.token_sort_ratio, score_cutoff=threshold))
+    # Create combined key by concatenating player name and NFL team
+    df1['combined_key'] = df1[key1] + " " + df1[key_team1]
+    df2['combined_key'] = df2[key2] + " " + df2[key_team2]
+
+    # Apply fuzzy matching on the combined key
+    matches = df1['combined_key'].apply(
+        lambda x: process.extractOne(x, df2['combined_key'], scorer=fuzz.token_sort_ratio, score_cutoff=threshold))
 
     df1['Best Match'] = matches.apply(lambda x: x[0] if x is not None else None)
     df1['Match Score'] = matches.apply(lambda x: x[1] if x is not None else None)
 
     # Merge on the 'Best Match' instead of the original key
-    merged_df = pd.merge(df1, df2, left_on='Best Match', right_on=key2, how='left')
+    merged_df = pd.merge(df1, df2, left_on='Best Match', right_on='combined_key', how='left')
+
+    # Drop the combined_key columns to keep the DataFrame clean
+    merged_df = merged_df.drop(columns=['combined_key_x', 'combined_key_y'])
 
     return merged_df
 
@@ -96,9 +106,9 @@ def gen_power_rankings(pr_week):
 
         for player in team_roster:
             # Append player name, position and the team that they're on
-            league_rosters.append([team.team_name, player.name, player.position])
+            league_rosters.append([team.team_name, player.name, player.position, player.proTeam])
 
-    league_rosters_df = pd.DataFrame(league_rosters, columns=['Team','Player','Position'])
+    league_rosters_df = pd.DataFrame(league_rosters, columns=['Team','Player','Position', 'NFL_Team'])
 
     # Remove the number at the end of the 'Pos' values
     player_values['Pos'] = player_values['Pos'].str.extract(r'(\D+)')
@@ -107,12 +117,17 @@ def gen_power_rankings(pr_week):
     league_rosters_filtered = league_rosters_df[~league_rosters_df['Position'].isin(['D/ST', 'PK'])]
     player_values_filtered = player_values[~player_values['Pos'].isin(['DST', 'PK'])]
 
-    # Perform fuzzy merge to match slightly different player names
+    print('\nLeague Rosters Players without Team:\n', league_rosters_filtered[(league_rosters_filtered['Player'].isna()) | (league_rosters_filtered['NFL_Team'].isna())])
+    print('\nPlayer Values Players without Team:\n', player_values_filtered[(player_values_filtered['Player Name'].isna()) | (player_values_filtered['NFL_Team'].isna())])
+
+    # Perform fuzzy merge using Player Name and NFL Team
     player_values_fuzzy_merged = fuzzy_merge(
-        player_values_filtered[['Player Name', 'Pos', 'Value']],
-        league_rosters_filtered[['Player', 'Team']],  # Ensure 'Team' is included in the merge
+        player_values_filtered[['Player Name', 'Pos', 'Value', 'NFL_Team']],
+        league_rosters_filtered[['Player', 'Team', 'NFL_Team']],  # Ensure 'Team' is included in the merge
         'Player Name',
         'Player',
+        'NFL_Team',
+        'NFL_Team',
         threshold=90
     )
 
@@ -123,6 +138,9 @@ def gen_power_rankings(pr_week):
     roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
     print(f'\n\tCheck for rostered players without exact matches (Week {pr_week}:\n\n{roster_check}')
 
+    # Count the # of players on each roster to get average player value, reducing bias towards teams with extra IR players
+    team_roster_count = final_df.groupby(['Team'], as_index=False).size()
+
     # Group by 'Team' and 'Position', summing 'Value'
     team_pos_values = final_df.groupby(['Team', 'Pos'], as_index=False)['Value'].sum()
 
@@ -131,6 +149,15 @@ def gen_power_rankings(pr_week):
 
     # Group by position to get total team value
     team_values = team_pos_values.groupby(['Team'], as_index=False)['Value'].sum()
+
+    # Merge with roster counts
+    team_values = team_values.merge(team_roster_count, on='Team')
+
+    # Divide total values by # of players
+    team_values['Value'] = round(team_values['Value'] / team_values['size'], 2)
+
+    # Drop size col
+    team_values.drop(columns='size', inplace=True)
 
     # power_rankings and values
     power_rankings_df = power_rankings_df.merge(team_values, on='Team')
@@ -430,7 +457,6 @@ def gen_playoff_prob():
     #     print(str(x)+'\t'+str(round((last_playoff_wins[x-1])/(simulations*1.0)*100,3))+'\t'+str(round((first_playoff_miss[x-1])/(simulations*1.0)*100,3)))
 
     print('\n{0:,}'.format(simulations) + " Simulations ran in " + str(delta))
-    print('\nProjections:\n', projections)
 
     return projections
 
