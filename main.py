@@ -117,6 +117,9 @@ def gen_power_rankings(pr_week):
     league_rosters_filtered = league_rosters_df[~league_rosters_df['Position'].isin(['D/ST', 'PK'])]
     player_values_filtered = player_values[~player_values['Pos'].isin(['DST', 'PK'])]
 
+    # Replace 'Marquise Brown' with 'Hollywood Brown' in the 'Player Name' column
+    player_values_filtered['Player Name'] = player_values_filtered['Player Name'].replace('Marquise Brown', 'Hollywood Brown')
+
     print('\nLeague Rosters Players without Team:\n', league_rosters_filtered[(league_rosters_filtered['Player'].isna()) | (league_rosters_filtered['NFL_Team'].isna())])
     print('\nPlayer Values Players without Team:\n', player_values_filtered[(player_values_filtered['Player Name'].isna()) | (player_values_filtered['NFL_Team'].isna())])
 
@@ -128,14 +131,19 @@ def gen_power_rankings(pr_week):
         'Player',
         'NFL_Team',
         'NFL_Team',
-        threshold=90
+        threshold=85
     )
 
     # Select and rename the final columns as 'Player Name', 'Pos', 'Value', and 'Team'
     final_df = player_values_fuzzy_merged[['Player Name', 'Pos', 'Value', 'Team']]
 
+    # Drop duplicates, keeping the first occurrence
+    final_df = final_df.drop_duplicates(subset='Player Name', keep='first')
+
+    final_df.to_csv(path_or_buf='/users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/final_df.csv')
+
     # Check for rostered players without exact value matches
-    roster_check = final_df[(final_df['Value'] == 'NaN') | (final_df['Pos'] == 'NaN')]  # Checking for unmatched players
+    roster_check = final_df[(final_df['Value'] != 'NaN') & (final_df['Team'] == '')]  # Checking for unmatched players
     print(f'\n\tCheck for rostered players without exact matches (Week {pr_week}:\n\n{roster_check}')
 
     # Count the # of players on each roster to get average player value, reducing bias towards teams with extra IR players
@@ -295,7 +303,7 @@ def gen_playoff_prob():
 
     # Create dictionary of teams and id number to be fed to monte carlo simulations
     # ['Pat'[1], 'Trevor'[2], 'Billy'[3], 'Jack'[4], 'Travis'[5], 'Lucas'[6], 'Cade'[7], 'Christian'[8]]
-    team_dictionary = {'Red Zone  Rockets':1, 'Final Deztination':2, 'Game of  Jones':3, 'Comeback Cardinals':4, 'OC Gang':5, 'Hurts Donit':6, 'Shippin Up To Austin':7, 'Team Ger':8}
+    team_dictionary = {'Red Zone  Rockets':1, 'Final Deztination':2, 'Game of  Jones':3, 'Comeback Cardinals':4, 'OC Gang':5, 'Hurts Donit':6, 'Shippin Up To Austin':7, 'Allen & Co.':8}
 
     # Initialize empty lists to store the names of home and away teams for each week
     home_team_names = []
@@ -418,8 +426,15 @@ def gen_playoff_prob():
     # Convert projections to Pandas Dataframe
     projections = pd.DataFrame(projections)
 
+    # create list of team names
+    team_names = []
+    teams = league.teams
+
+    for team_obj in teams:
+        team_names.append(team_obj.team_name)
+
     # Insert Team Names to DataFrame
-    projections.insert(loc=0, column='Team', value=team_names)
+    projections.insert(loc=0, column='Team', value=league.teams)
     projections = projections.set_axis(['Team', 'Playoffs', '1st Seed', '2nd Seed', '3rd Seed', '4th Seed'], axis=1)
     projections = projections.sort_values(by=['Playoffs', '1st Seed', '2nd Seed', '3rd Seed', '4th Seed'], ascending=False)
     # projections[['1st Seed','2nd Seed','3rd Seed', '4th Seed']] = projections[['1st Seed','2nd Seed','3rd Seed', '4th Seed']].astype(str) + "%"
@@ -528,55 +543,78 @@ def gen_ai_summary():
 
     # Create dataframe of fantasy pros names to generate player urls for news
     names = pd.read_csv('/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/fantasy_pros_names.csv')
-    names = pd.DataFrame(names, columns=['Name'])
+    names = pd.DataFrame(names, columns=['Name', 'Team'])
 
     # load player_values data
     values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week}.csv')
 
     urls = []
-    # Add formated url with each players name
-    # Iterate over each player
-    for player in names['Name']:
+    # Iterate over each player and their corresponding team
+    for player, team in zip(names['Name'], names['Team']):
         # Split the full name into parts and join them with hyphens, all in lowercase
         formatted_name = '-'.join(player.split()).lower()
 
         # Create the URL with f-string
         url = f"https://www.fantasypros.com/nfl/players/{formatted_name}.php"
 
-        # Append or store the URL
-        urls.append([player, url])
+        # Append the player name, team, and URL to the urls list
+        urls.append([player, team, url])
+
+    # Now urls contains the player, team, and formatted URL
 
     # Convert urls list to DataFrame
-    urls = pd.DataFrame(urls, columns=['Name','url'])
+    urls = pd.DataFrame(urls, columns=['Name','url', 'Team'])
+
+    # merge urls df with names df, retain name urls to maintain code below
+    urls = pd.merge(urls, names, how='inner', on='Name')
+
+    urls.drop('Team_y', axis=1, inplace=True)
+    urls.rename(columns={'Team_x': 'url', 'url': 'Team'}, inplace=True)
 
     # Fuzzy merge 'values' DataFrame with 'urls' to get player values
-    values = fuzzy_merge(values, urls, 'Player Name', 'Name', threshold=80)
+    values = fuzzy_merge(
+        values[['Player Name', 'Pos', 'Value', 'NFL_Team']],
+        urls[['Name', 'url', 'Team']],
+        'Player Name',
+        'Name',
+        'NFL_Team',
+        'Team',
+        threshold=90
+    )
 
     # Fill 'Name' NaN with 'Player Name'
     values['Name'].fillna(values['Player Name'], inplace=True)
 
     # drop unnecessary columns
-    values.drop(['Best Match', 'Match Score'], axis=1, inplace=True)
+    values.drop(['Best Match', 'Match Score', 'Team', 'Pos', 'Name'], axis=1, inplace=True)
 
     if week > 1:
         # get player values from last week and merge with current values and urls
         prev_values = pd.read_csv(f'/users/christiangeer/fantasy_sports/football/power_rankings/espn-api-v3/player_values/KTC_values_week{week-1}.csv')
 
         # convert to df
-        prev_values = pd.DataFrame(prev_values, columns=['Player Name', 'Pos', 'Value'])
+        prev_values = pd.DataFrame(prev_values, columns=['Player Name', 'Pos', 'Value', 'NFL_Team'])
 
-        # fuzzy merge on 'Name' and 'Player Name'
-        values = fuzzy_merge(values, prev_values, 'Name', 'Player Name', threshold=80)
+        # Fuzzy merge 'values' DataFrame with 'urls' to get player values
+        values = fuzzy_merge(
+            prev_values[['Player Name', 'Pos', 'Value', 'NFL_Team']],
+            values[['Player Name', 'Value', 'NFL_Team', 'url']],
+            'Player Name',
+            'Player Name',
+            'NFL_Team',
+            'NFL_Team',
+            threshold=90
+        )
 
         # drop unnecessary columns from merge and rename value_x and value_y to be clear
-        values.drop(['Player Name_y', 'Pos_x', 'Pos_y', 'Best Match', 'Match Score'], axis=1, inplace=True)
-        values.rename(columns={'Player Name_x':'Player Name', 'Value_x':'value', 'Value_y':'value_prev'}, inplace=True)
+        values.drop(['Player Name_y', 'Pos', 'Best Match', 'Match Score','NFL_Team_x', 'NFL_Team_y'], axis=1, inplace=True)
+        values.rename(columns={'Player Name_x':'Player Name', 'Value_x':'prev_value', 'Value_y':'value'}, inplace=True)
 
         # calculate change in values from last week to this  week
-        values['change_value'] = values['value'] - values['value_prev']
+        values['change_value'] = values['value'] - values['prev_value']
 
         # drop raw value data
-        values.drop(['value', 'value_prev'], axis=1, inplace=True)
+        values.drop(['value', 'prev_value'], axis=1, inplace=True)
 
         # Create a dictionary mapping player names to their values
         name_to_value = dict(zip(values['Player Name'], values['change_value']))
