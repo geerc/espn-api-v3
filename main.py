@@ -140,8 +140,6 @@ def gen_power_rankings(pr_week):
     # Drop duplicates, keeping the first occurrence
     final_df = final_df.drop_duplicates(subset='Player Name', keep='first')
 
-    final_df.to_csv(path_or_buf='/users/christiangeer/Fantasy_Sports/football/power_rankings/espn-api-v3/final_df.csv')
-
     # Check for rostered players without exact value matches
     roster_check = final_df[(final_df['Value'] != 'NaN') & (final_df['Team'] == '')]  # Checking for unmatched players
     print(f'\n\tCheck for rostered players without exact matches (Week {pr_week}:\n\n{roster_check}')
