@@ -432,7 +432,7 @@ def gen_playoff_prob():
         team_names.append(team_obj.team_name)
 
     # Insert Team Names to DataFrame
-    projections.insert(loc=0, column='Team', value=league.teams)
+    projections.insert(loc=0, column='Team', value=[team.team_name for team in league.teams])
     projections = projections.set_axis(['Team', 'Playoffs', '1st Seed', '2nd Seed', '3rd Seed', '4th Seed'], axis=1)
     projections = projections.sort_values(by=['Playoffs', '1st Seed', '2nd Seed', '3rd Seed', '4th Seed'], ascending=False)
     # projections[['1st Seed','2nd Seed','3rd Seed', '4th Seed']] = projections[['1st Seed','2nd Seed','3rd Seed', '4th Seed']].astype(str) + "%"
