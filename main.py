@@ -729,8 +729,8 @@ if week > 1:
     weekly_change_rankings = weekly_change(rankings, prev_rankings)
 
 # Generate Expected Standings
-print('\nGenerating expected standings...')
-expected_standings = gen_expected_standings(rankings)
+# print('\nGenerating expected standings...')
+# expected_standings = gen_expected_standings(rankings)
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
 if week >= 5:
@@ -795,7 +795,7 @@ if week >= 5:
     print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
 print(f"\n## Projected Standings (as of week {week})")
-print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
+# print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
 
 print("\n## LUCK INDEX")
 print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center'))
