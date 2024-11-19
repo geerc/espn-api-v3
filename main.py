@@ -118,7 +118,7 @@ def gen_power_rankings(pr_week):
     player_values_filtered = player_values[~player_values['Pos'].isin(['DST', 'PK'])]
 
     # Replace 'Marquise Brown' with 'Hollywood Brown' in the 'Player Name' column
-    player_values_filtered['Player Name'] = player_values_filtered['Player Name'].replace('Marquise Brown', 'Hollywood Brown')
+    player_values_filtered['Player Name'].replace('Marquise Brown', 'Hollywood Brown')
 
     print('\nLeague Rosters Players without Team:\n', league_rosters_filtered[(league_rosters_filtered['Player'].isna()) | (league_rosters_filtered['NFL_Team'].isna())])
     print('\nPlayer Values Players without Team:\n', player_values_filtered[(player_values_filtered['Player Name'].isna()) | (player_values_filtered['NFL_Team'].isna())])
@@ -729,8 +729,8 @@ if week > 1:
     weekly_change_rankings = weekly_change(rankings, prev_rankings)
 
 # Generate Expected Standings
-# print('\nGenerating expected standings...')
-# expected_standings = gen_expected_standings(rankings)
+print('\nGenerating expected standings...')
+expected_standings = gen_expected_standings(rankings)
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
 if week >= 5:
