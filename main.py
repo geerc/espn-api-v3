@@ -120,8 +120,17 @@ def gen_power_rankings(pr_week):
     # Replace 'Marquise Brown' with 'Hollywood Brown' in the 'Player Name' column
     player_values_filtered['Player Name'].replace('Marquise Brown', 'Hollywood Brown')
 
-    print('\nLeague Rosters Players without Team:\n', league_rosters_filtered[(league_rosters_filtered['Player'].isna()) | (league_rosters_filtered['NFL_Team'].isna())])
-    print('\nPlayer Values Players without Team:\n', player_values_filtered[(player_values_filtered['Player Name'].isna()) | (player_values_filtered['NFL_Team'].isna())])
+    # Only print if the dataframe is not empty and has missing values in specific columns
+    if (league_rosters_filtered['Player'].isna().sum() > 0) or (league_rosters_filtered['NFL_Team'].isna().sum() > 0):
+        print('\nLeague Rosters Players without Team:\n',
+              league_rosters_filtered[
+                  (league_rosters_filtered['Player'].isna()) | (league_rosters_filtered['NFL_Team'].isna())])
+
+    if (player_values_filtered['Player Name'].isna().sum() > 0) or (
+            player_values_filtered['NFL_Team'].isna().sum() > 0):
+        print('\nPlayer Values Players without Team:\n',
+              player_values_filtered[
+                  (player_values_filtered['Player Name'].isna()) | (player_values_filtered['NFL_Team'].isna())])
 
     # Perform fuzzy merge using Player Name and NFL Team
     player_values_fuzzy_merged = fuzzy_merge(
@@ -139,10 +148,12 @@ def gen_power_rankings(pr_week):
 
     # Drop duplicates, keeping the first occurrence
     final_df = final_df.drop_duplicates(subset='Player Name', keep='first')
+    # print(final_df)
 
     # Check for rostered players without exact value matches
-    roster_check = final_df[(final_df['Value'] != 'NaN') & (final_df['Team'] == '')]  # Checking for unmatched players
-    print(f'\n\tCheck for rostered players without exact matches (Week {pr_week}:\n\n{roster_check}')
+    if final_df[(final_df['Value'] != 'NaN') & (final_df['Team'] == '')].shape[0] > 0:
+        roster_check = final_df[(final_df['Value'] != 'NaN') & (final_df['Team'] == '')]  # Checking for unmatched players
+        print(f'\n\tCheck for rostered players without exact matches (Week {pr_week}:\n\n{roster_check}')
 
     # Count the # of players on each roster to get average player value, reducing bias towards teams with extra IR players
     team_roster_count = final_df.groupby(['Team'], as_index=False).size()
@@ -734,7 +745,7 @@ expected_standings = gen_expected_standings(rankings)
 
 # Generate Playoff Probability (if week 5 or later) and append to expected standings
 if week >= 5:
-    print('Generating playoff probabilities...')
+    print('\nGenerating playoff probabilities...')
     playoff_prob = gen_playoff_prob()
 
 # Generate Luck Index
