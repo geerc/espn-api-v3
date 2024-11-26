@@ -479,7 +479,6 @@ def gen_expected_standings(power_rankings):
     sos = [] # strength of schedule list
 
     for team in league.teams:
-
         # Get the team's Power Score by matching the team name in the DataFrame
         team_power_score = float(power_rankings.loc[power_rankings['Team'] == team.team_name, 'Power Score'].values[0])
 
@@ -491,7 +490,7 @@ def gen_expected_standings(power_rankings):
 
         # Calculate team's win prob for each opp on schedule, only for remaining games
         for week_num, opp in enumerate(team.schedule, start=1):
-            if week_num > week:  # Skip past games, only calculate for remaining weeks
+            if week_num > week:  # Skip previous games, only calculate for remaining weeks
                 # Get the current power score of the opponent
                 opp_power_score = float(
                     power_rankings.loc[power_rankings['Team'] == opp.team_name, 'Power Score'].values[0])
@@ -505,11 +504,11 @@ def gen_expected_standings(power_rankings):
                 # Add probability to win this matchup to win prob schedule list
                 win_prob_schedule.append(win_prob)
 
-        # Calculate a team's expected wins as the sum of it's win probabilities and current wins
+        # Calculate a team's expected wins as the sum of its win probabilities and current wins
         team_expected_wins = round(sum(win_prob_schedule) + team.wins, 2)
 
-        # Calculate a team's expected losses as total games (15) - projected wins, then add current losses
-        team_expected_losses = 15 - team_expected_wins + team.losses
+        # Calculate expected losses as weeks remaining - win_prob + current losses
+        team_expected_losses = round(15 - week - sum(win_prob_schedule) + team.losses, 2)
 
         # Average SOS by remaining games
         team_sos = team_sos / (15 - week)
@@ -518,18 +517,19 @@ def gen_expected_standings(power_rankings):
         expected_wins.append([team.team_name, team_expected_wins, team_expected_losses])
 
         # Append team name and remaining sos to league wide sos list
-        sos.append(team_sos)
+        sos.append([team.team_name, team_sos])
 
     # Convert expected wins and sos to Dataframes to join together
     expected_wins_df = pd.DataFrame(expected_wins, columns=['Team','Projected Wins','Projected Losses'])
-    sos_df = pd.DataFrame(sos).round(2)
+    sos_df = pd.DataFrame(sos, columns=['Team', 'sos']).round()
 
     # if it is week 9 or greater, join sos with expected wins
     if week > 9:
-        expected_wins_df.merge(sos_df, on='Team')
+        expected_wins_df = expected_wins_df.merge(sos_df, on='Team')
 
     # Sort by projected wins
     expected_wins_df = expected_wins_df.sort_values(by=['Projected Wins'], ascending=False)
+
 
     # Set index to start at 1
     expected_wins_df = expected_wins_df.set_axis(range(1, len(expected_wins_df) + 1))
@@ -795,7 +795,7 @@ if week >= 5:
     print(table(playoff_prob, headers='keys', tablefmt='pipe', numalign='center'))
 
 print(f"\n## Projected Standings (as of week {week})")
-# print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
+print(table(expected_standings, headers='keys', tablefmt='pipe', numalign='center'))
 
 print("\n## LUCK INDEX")
 print(table(season_luck_index, headers='keys', tablefmt='pipe', numalign='center'))
