@@ -521,8 +521,9 @@ def gen_expected_standings(power_rankings):
         # Calculate expected losses as weeks remaining - win_prob + current losses
         team_expected_losses = round(15 - week - sum(win_prob_schedule) + team.losses, 2)
 
-        # Average SOS by remaining games
-        team_sos = team_sos / (15 - week)
+        if week < 15:
+            # Average SOS by remaining games
+            team_sos = team_sos / (15 - week)
 
         # Append team name and expected wins to league wide expected wins list
         expected_wins.append([team.team_name, team_expected_wins, team_expected_losses])
@@ -534,13 +535,12 @@ def gen_expected_standings(power_rankings):
     expected_wins_df = pd.DataFrame(expected_wins, columns=['Team','Projected Wins','Projected Losses'])
     sos_df = pd.DataFrame(sos, columns=['Team', 'sos']).round()
 
-    # if it is week 9 or greater, join sos with expected wins
-    if week > 9:
+    # add sos after week 9, but exclude in week 15 as it will be 0, join sos with expected wins
+    if 9 < week < 15:
         expected_wins_df = expected_wins_df.merge(sos_df, on='Team')
 
     # Sort by projected wins
     expected_wins_df = expected_wins_df.sort_values(by=['Projected Wins'], ascending=False)
-
 
     # Set index to start at 1
     expected_wins_df = expected_wins_df.set_axis(range(1, len(expected_wins_df) + 1))
