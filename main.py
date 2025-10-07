@@ -782,7 +782,7 @@ summary = gen_ai_summary()
 # Print everything
 print('\nWriting to markdown file...')
 # open text file
-filepath = f"/Users/christiangeer/Fantasy_Sports/football/power_rankings/jtown-dynasty/content/blog/Week{week}{year}PowerRankings.md"
+filepath = f"/Users/christiangeer/Fantasy_Sports/football/power_rankings/jtown-dynasty/src/content/Week{week}{year}PowerRankings.md"
 sys.stdout = open(filepath, "w")
 
 # for the markdown files in blog
