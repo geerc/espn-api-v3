@@ -40,7 +40,7 @@ league = League(league_id, year, espn_s2, swid)
 
 # Get NFL week
 week = league.nfl_week - 1
-# week = 6
+# week = 4
 
 print(league, "\n", f'Week {week}')
 
@@ -312,7 +312,7 @@ def gen_playoff_prob():
 
     # Create dictionary of teams and id number to be fed to monte carlo simulations
     # ['Pat'[1], 'Trevor'[2], 'Billy'[3], 'Jack'[4], 'Travis'[5], 'Lucas'[6], 'Cade'[7], 'Christian'[8]]
-    team_dictionary = {'Red Zone  Rockets':1, 'Final Deztination':2, 'Game of  Jones':3, 'Comeback Cardinals':4, 'OC Gang':5, 'Hurts Donit':6, 'Shippin Up To Austin':7, 'Allen & Co.':8}
+    team_dictionary = {'Red Zone  Rockets':1, 'Final Deztination':2, 'Game of  Jones':3, 'Juggernaut Jaguars':4, 'OC Gang':5, 'Hurts Donit':6, 'Shippin Up To Austin':7, 'Allen & Co.':8}
 
     # Initialize empty lists to store the names of home and away teams for each week
     home_team_names = []
@@ -782,18 +782,16 @@ summary = gen_ai_summary()
 # Print everything
 print('\nWriting to markdown file...')
 # open text file
-filepath = f"/Users/christiangeer/Fantasy_Sports/football/power_rankings/jtown-dynasty/src/content/Week{week}{year}PowerRankings.md"
+filepath = f"/Users/christiangeer/Fantasy_Sports/football/power_rankings/jtown-dynasty/content/power_rankings/{year}Week{week}/index.md"
 sys.stdout = open(filepath, "w")
 
 # for the markdown files in blog
-print("---")
-print(f"title: Week {week} {year} Report")
-print(f"date: {datetime.now().date()}")
-print(f"image: /images/{year}week{week}.jpg")
-print("draft: false")
-print("---")
-
-print("<!-- excerpt -->")
+print("+++")
+print(f"title = \"Week {week} {year} Report\"")
+print(f"date = {datetime.now().date()}")
+print(f"cover = {{ image = \"week{week}_image.jpeg\" }}")
+print("draft = false")
+print("+++")
 
 print("\n# POWER RANKINGS\n")
 # Value un-informed
