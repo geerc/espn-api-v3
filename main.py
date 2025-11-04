@@ -312,7 +312,7 @@ def gen_playoff_prob():
 
     # Create dictionary of teams and id number to be fed to monte carlo simulations
     # ['Pat'[1], 'Trevor'[2], 'Billy'[3], 'Jack'[4], 'Travis'[5], 'Lucas'[6], 'Cade'[7], 'Christian'[8]]
-    team_dictionary = {'Red Zone  Rockets':1, 'Final Deztination':2, 'Game of  Jones':3, 'We Claim Ward':4, 'OC Gang':5, 'Hurts Donit':6, 'Shippin Up To Austin':7, 'Allen & Co.':8}
+    team_dictionary = {'Red Zone  Rockets':1, 'Final Deztination':2, 'Game of  Jones':3, 'Comeback Cardinals':4, 'OC Gang':5, 'Hurts Donit':6, 'Shippin Up To Austin':7, 'Allen & Co.':8}
 
     # Initialize empty lists to store the names of home and away teams for each week
     home_team_names = []
