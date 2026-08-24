@@ -1,0 +1,13 @@
+beautifulsoup4>=4.12,<5
+espn-api>=0.44,<1
+fuzzywuzzy>=0.18,<1
+langchain-core>=0.3,<1
+langchain-openai>=0.3,<1
+numpy>=1.26,<3
+pandas>=2.2,<3
+python-dotenv>=1,<2
+requests>=2.31,<3
+scikit-learn>=1.4,<2
+tabulate>=0.9,<1
+# macOS system Python 3.9 is linked against LibreSSL, which urllib3 2 does not support.
+urllib3>=1.26,<2
