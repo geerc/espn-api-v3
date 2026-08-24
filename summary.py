@@ -1,15 +1,31 @@
 import json
+from urllib.parse import quote_plus
 
 import pandas as pd
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 
 
+def _fantasypros_url(player_name):
+    """Return a safe lookup URL instead of guessing FantasyPros' canonical slug."""
+    return f"https://www.fantasypros.com/nfl/players/?q={quote_plus(str(player_name))}"
+
+
 def _player_metadata(names_path, values_path, previous_values_path=None):
-    names = pd.read_csv(names_path, usecols=["Name", "Team"])
+    names = pd.read_csv(names_path)
+    missing = {"Name", "Team"} - set(names.columns)
+    if missing:
+        raise ValueError(f"Player names file is missing required columns: {', '.join(sorted(missing))}")
     values = pd.read_csv(values_path, usecols=["Player Name", "Value"])
     values["Value"] = pd.to_numeric(values["Value"], errors="coerce")
-    urls = {name: f"https://www.fantasypros.com/nfl/players/{'-'.join(str(name).split()).lower()}.php" for name in names["Name"].dropna()}
+    urls = {}
+    for row in names.dropna(subset=["Name"]).to_dict("records"):
+        canonical_url = row.get("URL")
+        urls[row["Name"]] = (
+            canonical_url
+            if pd.notna(canonical_url) and str(canonical_url).strip()
+            else _fantasypros_url(row["Name"])
+        )
     if previous_values_path and previous_values_path.exists():
         previous = pd.read_csv(previous_values_path, usecols=["Player Name", "Value"])
         previous["Value"] = pd.to_numeric(previous["Value"], errors="coerce")
