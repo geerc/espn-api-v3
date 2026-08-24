@@ -42,7 +42,7 @@ class AppConfig:
         report_root = Path(
             os.getenv(
                 "REPORT_ROOT",
-                SCRIPT_DIR.parent.parent / "jtown-dynasty" / "content" / "power_rankings",
+                SCRIPT_DIR.parent / "jtown-dynasty" / "content" / "power_rankings",
             )
         ).expanduser()
 
