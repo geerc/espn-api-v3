@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fantasy-football-reports"
+version = "0.1.0"
+description = "Reusable ESPN and Sleeper fantasy-football report generators."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "beautifulsoup4>=4.12,<5",
+  "fuzzywuzzy>=0.18,<1",
+  "numpy>=1.26,<3",
+  "openai>=1.40,<3",
+  "pandas>=2.2,<3",
+  "python-dotenv>=1,<2",
+  "requests>=2.31,<3",
+  "urllib3>=1.26,<2",
+]
+
+[project.optional-dependencies]
+draft = [
+  "lxml>=5,<7",
+  "matplotlib>=3.8,<4",
+]
+espn = [
+  "espn-api>=0.44,<1",
+  "langchain-core>=0.3,<1",
+  "langchain-openai>=0.3,<1",
+  "scikit-learn>=1.4,<2",
+  "tabulate>=0.9,<1",
+]
+dev = [
+  "pytest>=8,<9",
+]
+all = [
+  "espn-api>=0.44,<1",
+  "langchain-core>=0.3,<1",
+  "langchain-openai>=0.3,<1",
+  "lxml>=5,<7",
+  "matplotlib>=3.8,<4",
+  "scikit-learn>=1.4,<2",
+  "tabulate>=0.9,<1",
+]
+
+[project.scripts]
+sleeper-rankings = "sleeper_rankings.cli:main"
+sleeper-draft-report = "draft_report.sleeper_draft_report:main"
+
+[tool.setuptools.packages.find]
+include = ["sleeper_rankings*", "draft_report*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
