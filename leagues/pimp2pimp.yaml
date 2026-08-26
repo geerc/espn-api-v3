@@ -1,9 +1,3 @@
 name: Pimp2Pimp
 platform: sleeper
 league_id: "1387560642545721344"
-
-website:
-  path: null
-
-reports:
-  draft_rankings: draft_report/reports

@@ -1,9 +1,3 @@
 name: JTown Dynasty
 platform: espn
 league_id: 916709
-
-website:
-  path: ../jtown-dynasty
-
-reports:
-  power_rankings: content/power_rankings

@@ -1,0 +1,14 @@
+name: SYPIP Power Rankings
+league: sypip
+
+repository:
+  path: ../sleeper-power-rankings
+  remote: git@github.com:geerc/sleeper-power-rankings.git
+
+deployment:
+  provider: netlify
+  url: https://sypip.netlify.app/
+
+outputs:
+  power_rankings: dist
+  draft_rankings: dist/draft-rankings

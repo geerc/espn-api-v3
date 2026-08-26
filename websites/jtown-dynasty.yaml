@@ -1,0 +1,10 @@
+name: JTown Dynasty
+league: jtown-dynasty
+
+repository:
+  path: ../jtown-dynasty
+  remote: git@github.com:geerc/jtown-dynasty.git
+
+outputs:
+  power_rankings: content/power_rankings
+  draft_rankings: content/draft_rankings
