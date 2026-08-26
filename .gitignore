@@ -7,3 +7,5 @@ __pycache__/
 # Environments
 .env
 venv/
+.pytest_cache/
+draft_report/reports/
