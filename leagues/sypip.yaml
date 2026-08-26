@@ -1,0 +1,9 @@
+name: SYPIP
+platform: sleeper
+league_id: "1389341850288009216"
+
+website:
+  path: null
+
+reports:
+  draft_rankings: draft_report/reports
