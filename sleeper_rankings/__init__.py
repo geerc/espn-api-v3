@@ -1,0 +1,2 @@
+"""Sleeper power rankings generator."""
+
