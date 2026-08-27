@@ -3,7 +3,7 @@ league: sypip
 
 repository:
   path: ../SYPIP
-  remote: git@github.com:geerc/sleeper-power-rankings.git
+  remote: git@github.com:geerc/SYPIP.git
 
 deployment:
   provider: netlify
