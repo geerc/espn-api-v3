@@ -39,6 +39,8 @@ def test_parse_args_loads_local_environment(monkeypatch, tmp_path):
     assert args.ai_model == "test-model"
     assert os.environ["OPENAI_MODEL"] == "test-model"
     assert args.ai_workers == 4
+    assert draft_report.DEFAULT_AI_MODEL == "gpt-5.6-terra"
+    assert args.ai_reasoning_effort == "low"
     assert args.refresh_projections is False
 
 
@@ -274,6 +276,7 @@ def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
     assert calls[0]["store"] is False
     assert calls[0]["tools"] == [{"type": "web_search"}]
     assert calls[0]["tool_choice"] == "auto"
+    assert calls[0]["reasoning"] == {"effort": "low"}
     statistics = __import__("json").loads(calls[0]["input"])
     assert statistics["position_ranks"] == {"QB": 3, "RB": 8}
     assert statistics["roster_construction"] == {"QB": 2, "RB": 6, "WR": 7, "TE": 2}

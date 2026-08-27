@@ -41,7 +41,8 @@ FLEX_ELIGIBILITY = {
 }
 POSITION_ALIASES = {"DEF": "DST"}
 DEFAULT_VOR_BASELINE = {"QB": 13, "RB": 35, "WR": 36, "TE": 13, "K": 8, "DST": 3}
-DEFAULT_AI_MODEL = "gpt-5-mini"
+DEFAULT_AI_MODEL = "gpt-5.6-terra"
+DEFAULT_AI_REASONING_EFFORT = "low"
 LOCAL_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 PROJECTION_CACHE_DIR = Path(__file__).resolve().parent / "cache"
 NFL_TEAM_CODES = {
@@ -450,7 +451,10 @@ def response_markdown_with_citations(response):
     return response.output_text.strip()
 
 
-def generate_ai_commentary(*, league, results, api_key, model, client=None, workers=4):
+def generate_ai_commentary(
+    *, league, results, api_key, model, client=None, workers=4,
+    reasoning_effort=DEFAULT_AI_REASONING_EFFORT,
+):
     if client is None:
         if not api_key:
             raise ValueError("OPENAI_API_KEY is required when --ai-commentary is enabled")
@@ -494,6 +498,7 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None, work
             text={"verbosity": "low"},
             tools=[{"type": "web_search"}],
             tool_choice="auto",
+            reasoning={"effort": reasoning_effort},
         )
         commentary = response_markdown_with_citations(response)
         if not commentary:
@@ -541,6 +546,12 @@ def parse_args(argv=None):
     parser.add_argument("--rscript", default="Rscript", help="Rscript executable")
     parser.add_argument("--ai-commentary", action="store_true", help="Add OpenAI-generated commentary for each team")
     parser.add_argument("--ai-model", default=os.getenv("OPENAI_MODEL", DEFAULT_AI_MODEL), help="OpenAI model used for commentary")
+    parser.add_argument(
+        "--ai-reasoning-effort",
+        choices=("none", "low", "medium", "high", "xhigh", "max"),
+        default=os.getenv("OPENAI_REASONING_EFFORT", DEFAULT_AI_REASONING_EFFORT),
+        help="OpenAI reasoning effort used for commentary",
+    )
     parser.add_argument("--ai-workers", type=int, default=int(os.getenv("OPENAI_AI_WORKERS", "4")), help="Concurrent AI commentary requests")
     return parser.parse_args(argv)
 
@@ -590,6 +601,7 @@ def run(args):
         generate_ai_commentary(
             league=league, results=results, api_key=os.getenv("OPENAI_API_KEY"), model=args.ai_model,
             workers=getattr(args, "ai_workers", 4),
+            reasoning_effort=getattr(args, "ai_reasoning_effort", DEFAULT_AI_REASONING_EFFORT),
         )
     output_dir = (
         args.output or Path(__file__).resolve().parent / "reports" / str(season)
