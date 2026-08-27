@@ -53,3 +53,28 @@ def test_archive_only_never_calls_sleeper(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "SleeperClient", forbidden)
     args = cli.parser().parse_args(["--archive-only", "--content", str(tmp_path / "empty"), "--output", str(tmp_path / "site")])
     assert "Something is coming" in cli.run(args).read_text()
+
+
+def test_overwrite_requires_week_and_rejects_schedule(monkeypatch):
+    from sleeper_rankings import cli
+    with pytest.raises(ValueError, match="explicit --week"):
+        cli.run(cli.parser().parse_args(["--overwrite"]))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    with pytest.raises(ValueError, match="cannot run on a schedule"):
+        cli.run(cli.parser().parse_args(["--overwrite", "--week", "2"]))
+
+
+def test_manual_overwrite_passes_existing_entry_guard(tmp_path, monkeypatch):
+    from sleeper_rankings import cli
+    class Client:
+        def league(self, league_id):
+            return {"name": "Test", "season": "2026"}
+    monkeypatch.setattr(cli, "SleeperClient", Client)
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    def reached_generation(*args, **kwargs):
+        raise RuntimeError("generation reached")
+    monkeypatch.setattr(cli, "load_league", reached_generation)
+    entry_path(tmp_path, "123", "2026", 1).mkdir(parents=True)
+    args = cli.parser().parse_args(["--league-id", "123", "--week", "1", "--overwrite", "--content", str(tmp_path)])
+    with pytest.raises(RuntimeError, match="generation reached"):
+        cli.run(args)

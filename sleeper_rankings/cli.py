@@ -23,12 +23,15 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--week", type=int)
     result.add_argument("--output", type=Path, default=Path("dist"))
     result.add_argument("--skip-ai", action="store_true")
+    result.add_argument("--overwrite", action="store_true", help="Manually replace an existing week; requires --week")
     result.add_argument("--content", type=Path, default=Path("content/reports"))
     result.add_argument("--archive-only", action="store_true", help="Render saved entries without generating new reports")
     return result
 
 
 def run(args: argparse.Namespace) -> Path:
+    if args.overwrite and (args.week is None or os.getenv("GITHUB_EVENT_NAME") == "schedule"):
+        raise ValueError("--overwrite requires an explicit --week and cannot run on a schedule")
     load_dotenv()
     config = json.loads(args.config.read_text(encoding="utf-8")) if args.config.exists() else {}
     if args.archive_only:
@@ -47,7 +50,7 @@ def run(args: argparse.Namespace) -> Path:
             season=league["season"],
         )
     destination = entry_path(args.content, league_id, league["season"], week)
-    if destination.exists():
+    if destination.exists() and not args.overwrite:
         raise ValueError(f"Report already exists: {destination}; refusing to overwrite it")
     data = load_league(client, str(league_id), through_week=week)
     if not any(team.players for team in data.teams):

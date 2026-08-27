@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,7 @@ def parse_args(argv=None):
     parser.add_argument("--simulations", type=int, default=100_000, help="Number of playoff simulations")
     parser.add_argument("--seed", type=int, help="Random seed for reproducible simulations")
     parser.add_argument("--skip-ai", action="store_true", help="Generate the report without an AI recap")
+    parser.add_argument("--overwrite", action="store_true", help="Manually replace an existing week; requires --week")
     parser.add_argument("--output", type=Path, help="Override the output Markdown path")
     return parser.parse_args(argv)
 
@@ -43,6 +45,9 @@ def generate_luck_index(league, week):
 
 
 def run(args):
+    overwrite = getattr(args, "overwrite", False)
+    if overwrite and (args.week is None or os.getenv("GITHUB_EVENT_NAME") == "schedule"):
+        raise ValueError("--overwrite requires an explicit --week and cannot run on a schedule")
     if args.simulations < 1:
         raise ValueError("--simulations must be greater than zero")
     config = AppConfig.from_env(year=args.year, week=args.week, simulations=args.simulations, random_seed=args.seed)
@@ -50,6 +55,9 @@ def run(args):
     week = config.week if config.week is not None else league.nfl_week - 1
     if week < 1:
         raise ValueError("No completed fantasy week is available; pass --week explicitly if appropriate")
+    output_path = args.output.expanduser().resolve() if args.output else config.report_root / f"{config.year}Week{week}" / "index.md"
+    if output_path.exists() and not overwrite:
+        raise ValueError(f"Report already exists: {output_path}; use --week and --overwrite for a manual correction")
 
     regular_season_weeks = league_setting(league, ["reg_season_count", "regular_season_matchup_period_count"], 15)
     playoff_teams = league_setting(league, ["playoff_team_count"], max(1, len(league.teams) // 2))
