@@ -310,6 +310,14 @@ def league_context(league):
     }
 
 
+def draft_impact_score(pick_no, vor_difference, total_picks):
+    """Weight VOR misses more heavily when they occur earlier in the draft."""
+    if total_picks <= 0:
+        return float(vor_difference)
+    early_pick_weight = 1 + max(0, total_picks - pick_no) / total_picks
+    return vor_difference * early_pick_weight
+
+
 def build_team_results(*, league, rosters, users, picks, projections, player_catalog=None):
     drafted_by_roster = {}
     unmatched = []
@@ -320,6 +328,7 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
             unmatched.append(f"{name} ({position or 'unknown'})")
             continue
         drafted_by_roster.setdefault(int(pick["roster_id"]), []).append((pick, projection))
+    total_picks = max((int(pick["pick_no"]) for pick in picks), default=0)
     results = []
     for roster in rosters:
         roster_id = int(roster["roster_id"])
@@ -358,8 +367,14 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
                 }
                 for player in sorted(roster_players, key=lambda player: (player.position, -player.points, player.name))
             ],
-            "reach": max(deltas, key=lambda item: item[2]) if deltas else None,
-            "value": min(deltas, key=lambda item: item[2]) if deltas else None,
+            "reach": max(
+                deltas,
+                key=lambda item: draft_impact_score(item[0], item[2], total_picks),
+            ) if deltas else None,
+            "value": min(
+                deltas,
+                key=lambda item: draft_impact_score(item[0], item[2], total_picks),
+            ) if deltas else None,
         })
     results.sort(key=lambda item: item["projected_points"])
     for rank, result in enumerate(reversed(results), 1):
@@ -427,7 +442,7 @@ def pick_summary(item):
     return f"{player.name} — pick {pick_no}, VOR rank {player.vor_rank} ({difference:+d})"
 
 
-def response_markdown_with_citations(response):
+def response_markdown_with_citations(response, footnote_prefix="source"):
     for item in getattr(response, "output", []):
         if getattr(item, "type", None) != "message":
             continue
@@ -445,8 +460,23 @@ def response_markdown_with_citations(response):
                     annotation.title or "source",
                     annotation.url,
                 ))
-            for start, end, title, url in sorted(citations, reverse=True):
-                text = f"{text[:start]}[{title}]({url}){text[end:]}"
+            safe_prefix = re.sub(r"[^a-zA-Z0-9-]+", "-", footnote_prefix).strip("-") or "source"
+            source_numbers = {}
+            sources = []
+            numbered_citations = []
+            for start, end, title, url in sorted(citations):
+                if url not in source_numbers:
+                    source_numbers[url] = len(sources) + 1
+                    sources.append((title, url))
+                numbered_citations.append((start, end, source_numbers[url]))
+            for start, end, source_number in sorted(numbered_citations, reverse=True):
+                text = f"{text[:start]}[^{safe_prefix}-{source_number}]{text[end:]}"
+            if sources:
+                footnotes = [
+                    f"[^{safe_prefix}-{number}]: [{title}]({url})"
+                    for number, (title, url) in enumerate(sources, 1)
+                ]
+                text = f"{text.strip()}\n\n" + "\n".join(footnotes)
             return text.strip()
     return response.output_text.strip()
 
@@ -486,7 +516,8 @@ def generate_ai_commentary(
         "positional ranks, biggest value, and biggest reach as evidence rather than merely repeating them. Be "
         "engaging, opinionated, colorful, and a little bombastic—celebrate sharp drafting and "
         "call out questionable decisions. Distinguish sourced facts from your analysis, never invent facts, and "
-        "include inline citations for web-derived claims. Return prose without a heading or bullet list."
+        "cite web-derived claims; the application will format those citations as footnotes at the end of the "
+        "team summary. Return prose without a heading or bullet list."
     )
     def generate_for_team(result):
         statistics = {
@@ -517,7 +548,9 @@ def generate_ai_commentary(
             tool_choice="auto",
             reasoning={"effort": reasoning_effort},
         )
-        commentary = response_markdown_with_citations(response)
+        commentary = response_markdown_with_citations(
+            response, footnote_prefix=f"team-{result['roster_id']}"
+        )
         if not commentary:
             raise ValueError(f"OpenAI returned empty commentary for {result['team']}")
         result["commentary"] = commentary

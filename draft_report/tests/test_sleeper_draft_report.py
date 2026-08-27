@@ -9,6 +9,7 @@ from draft_report.sleeper_draft_report import (
     PlayerProjection,
     add_kicker_vor_and_rerank,
     build_team_results,
+    draft_impact_score,
     generate_ai_commentary,
     generate_dummy_picks,
     cached_projection_path,
@@ -134,6 +135,11 @@ def test_team_results_are_worst_to_best_and_reach_value_use_actual_pick():
         {"name": "Alpha QB", "position": "QB", "season_projection": 300.0},
         {"name": "Alpha RB", "position": "RB", "season_projection": 200.0},
     ]
+
+
+def test_draft_impact_score_gives_early_picks_more_weight():
+    assert draft_impact_score(10, 50, 240) > draft_impact_score(220, 75, 240)
+    assert draft_impact_score(10, -50, 240) < draft_impact_score(220, -75, 240)
 
 
 def test_team_results_use_full_sleeper_roster():
@@ -262,6 +268,7 @@ def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
 
     client = SimpleNamespace(responses=FakeResponses())
     results = [{
+        "roster_id": 7,
         "team": "Alpha",
         "rank": 2,
         "team_count": 12,
@@ -298,7 +305,7 @@ def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
     assert "source of truth" in calls[0]["instructions"]
 
 
-def test_web_citations_are_rendered_as_clickable_markdown():
+def test_web_citations_are_rendered_as_clickable_footnotes():
     annotation = SimpleNamespace(
         type="url_citation", start_index=15, end_index=21,
         title="FantasyPros analysis", url="https://www.fantasypros.com/example",
@@ -310,8 +317,9 @@ def test_web_citations_are_rendered_as_clickable_markdown():
         output=[SimpleNamespace(type="message", content=[content])], output_text=content.text,
     )
 
-    assert response_markdown_with_citations(response) == (
-        "A strong claim [FantasyPros analysis](https://www.fantasypros.com/example)."
+    assert response_markdown_with_citations(response, footnote_prefix="team-7") == (
+        "A strong claim [^team-7-1].\n\n"
+        "[^team-7-1]: [FantasyPros analysis](https://www.fantasypros.com/example)"
     )
 
 
