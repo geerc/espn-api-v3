@@ -318,6 +318,29 @@ def draft_impact_score(pick_no, vor_difference, total_picks):
     return vor_difference * early_pick_weight
 
 
+def player_availability_concern(data):
+    injury_status = str(data.get("injury_status") or "").strip()
+    roster_status = str(data.get("status") or "").strip()
+    concern_statuses = {"doubtful", "ir", "out", "pup", "questionable", "suspended"}
+    statuses = []
+    for status in (injury_status, roster_status):
+        if status.lower() in concern_statuses and status.lower() not in {
+            item.lower() for item in statuses
+        }:
+            statuses.append(status)
+    if not statuses:
+        return None
+    name = data.get("full_name") or (
+        f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
+    ) or "Unknown player"
+    position = normalize_position(data.get("position", ""))
+    body_part = str(data.get("injury_body_part") or "").strip()
+    details = ", ".join(statuses)
+    if body_part:
+        details = f"{details} — {body_part}"
+    return f"{name}{f' ({position})' if position else ''}: {details}"
+
+
 def build_team_results(*, league, rosters, users, picks, projections, player_catalog=None):
     drafted_by_roster = {}
     unmatched = []
@@ -329,15 +352,20 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
             continue
         drafted_by_roster.setdefault(int(pick["roster_id"]), []).append((pick, projection))
     total_picks = max((int(pick["pick_no"]) for pick in picks), default=0)
+    reach_value_cutoff = math.floor(total_picks * 0.75)
     results = []
     for roster in rosters:
         roster_id = int(roster["roster_id"])
         drafted = drafted_by_roster.get(roster_id, [])
         roster_players = [item[1] for item in drafted]
+        availability_concerns = []
         if player_catalog is not None:
             roster_players = []
             for player_id in roster.get("players") or []:
                 data = player_catalog.get(str(player_id), {})
+                concern = player_availability_concern(data)
+                if concern:
+                    availability_concerns.append(concern)
                 name = data.get("full_name") or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
                 position = normalize_position(data.get("position", ""))
                 projection = projections.get((normalize_name(name), position))
@@ -352,13 +380,18 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
         for _, player in starters:
             if player.position in position_totals:
                 position_totals[player.position] += player.points
-        deltas = [(int(pick["pick_no"]), player, player.vor_rank - int(pick["pick_no"])) for pick, player in drafted]
+        deltas = [
+            (int(pick["pick_no"]), player, player.vor_rank - int(pick["pick_no"]))
+            for pick, player in drafted
+            if int(pick["pick_no"]) <= reach_value_cutoff
+        ]
         results.append({
             "roster_id": roster_id,
             "team": team_name(roster_id, rosters, users),
             "projected_points": score,
             "position_totals": position_totals,
             "roster_construction": dict(sorted(Counter(player.position for player in roster_players).items())),
+            "availability_concerns": availability_concerns,
             "roster": [
                 {
                     "name": player.name,
@@ -423,7 +456,7 @@ def render_radar(result, path):
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
-    figure, axis = plt.subplots(figsize=(4, 4), subplot_kw={"polar": True})
+    figure, axis = plt.subplots(figsize=(3.25, 3.25), subplot_kw={"polar": True})
     axis.plot(angles, values, color="#2563eb", linewidth=2)
     axis.fill(angles, values, color="#60a5fa", alpha=0.35)
     axis.set_xticks(angles[:-1], labels)
@@ -431,7 +464,7 @@ def render_radar(result, path):
     axis.set_yticklabels([])
     axis.grid(alpha=0.3)
     figure.tight_layout()
-    figure.savefig(path, dpi=130, bbox_inches="tight", transparent=True)
+    figure.savefig(path, dpi=120, bbox_inches="tight", transparent=True)
     plt.close(figure)
 
 
@@ -440,6 +473,13 @@ def pick_summary(item):
         return "N/A"
     pick_no, player, difference = item
     return f"{player.name} — pick {pick_no}, VOR rank {player.vor_rank} ({difference:+d})"
+
+
+def position_rank_summary(result):
+    return ", ".join(
+        f"{position} #{rank}" if rank is not None else f"{position} N/A"
+        for position, rank in result.get("position_ranks", {}).items()
+    ) or "N/A"
 
 
 def response_markdown_with_citations(response, footnote_prefix="source"):
@@ -577,11 +617,23 @@ def render_report(*, league, results):
             f"## #{result['rank']} {result['team']}", "",
             f"**Projected starter points:** {result['projected_points']:.1f}", "",
             f"![{result['team']} positional strength radar chart]({image_name})", "",
-            f"**Biggest Reach:** {pick_summary(result['reach'])}", "",
-            f"**Biggest Value:** {pick_summary(result['value'])}", "",
         ])
         if result.get("commentary"):
-            sections.extend([result["commentary"], ""])
+            sections.extend([
+                f"**Biggest Reach:** {pick_summary(result['reach'])}", "",
+                f"**Biggest Value:** {pick_summary(result['value'])}", "",
+                result["commentary"], "",
+            ])
+        else:
+            concerns = result.get("availability_concerns") or []
+            concern_summary = "; ".join(concerns) if concerns else "None currently flagged by Sleeper"
+            sections.extend([
+                "### Human analysis notes", "",
+                f"- **Position-group rankings:** {position_rank_summary(result)}", "",
+                f"- **Biggest Reach:** {pick_summary(result['reach'])}", "",
+                f"- **Biggest Value:** {pick_summary(result['value'])}", "",
+                f"- **Injury/suspension monitor:** {concern_summary}", "",
+            ])
     return "\n".join(sections)
 
 
