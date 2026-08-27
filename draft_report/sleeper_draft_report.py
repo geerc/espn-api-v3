@@ -49,6 +49,10 @@ NFL_TEAM_CODES = {
     "san francisco 49ers": "SF", "seattle seahawks": "SEA", "tampa bay buccaneers": "TB",
     "tennessee titans": "TEN", "washington commanders": "WAS",
 }
+PLAYER_NAME_ALIASES = {
+    "chigokonkwo": "chigoziemokonkwo",
+    "kennygainwell": "kennethgainwell",
+}
 
 
 @dataclass(frozen=True)
@@ -70,7 +74,8 @@ def api_get(path, *, session=requests):
 def normalize_name(value):
     value = unicodedata.normalize("NFKD", str(value)).encode("ascii", "ignore").decode()
     value = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b", "", value.lower())
-    return re.sub(r"[^a-z0-9]", "", value)
+    normalized = re.sub(r"[^a-z0-9]", "", value)
+    return PLAYER_NAME_ALIASES.get(normalized, normalized)
 
 
 def normalize_position(value):
@@ -290,6 +295,7 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
     results.sort(key=lambda item: item["projected_points"])
     for rank, result in enumerate(reversed(results), 1):
         result["rank"] = rank
+    unmatched = list(dict.fromkeys(unmatched))
     return results, unmatched
 
 

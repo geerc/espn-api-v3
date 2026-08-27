@@ -25,6 +25,11 @@ def test_normalize_name_handles_suffixes_and_punctuation():
     assert normalize_name("D'Andre Swift Jr.") == "dandreswift"
 
 
+def test_normalize_name_handles_sleeper_projection_aliases():
+    assert normalize_name("Kenny Gainwell") == normalize_name("Kenneth Gainwell")
+    assert normalize_name("Chig Okonkwo") == normalize_name("Chigoziem Okonkwo")
+
+
 def test_optimize_lineup_maximizes_legal_flex_lineup():
     players = [
         player("QB", "QB", 300), player("RB1", "RB", 250), player("RB2", "RB", 200),
