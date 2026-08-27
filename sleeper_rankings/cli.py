@@ -13,7 +13,7 @@ from .loader import completed_week, load_league
 from .rankings import add_weekly_change, luck_index, playoff_probabilities, power_rankings, projected_standings
 from .render import render_preseason, render_site
 from .summary import generate_summary
-from .values import fetch_values
+from .values import weekly_values
 
 
 def parser() -> argparse.ArgumentParser:
@@ -55,7 +55,8 @@ def run(args: argparse.Namespace) -> Path:
     data = load_league(client, str(league_id), through_week=week)
     if not any(team.players for team in data.teams):
         raise ValueError("The league has no populated rosters yet")
-    values = fetch_values(float(config.get("dynasty_weight", 0)))
+    snapshot_path = destination / "values.csv"
+    values = weekly_values(snapshot_path, overwrite=args.overwrite, dynasty_weight=float(config.get("dynasty_weight", 0)))
     rankings = power_rankings(data, week, values)
     rankings = with_previous(rankings, args.content, league_id, league["season"], week)
     standings = projected_standings(data, rankings, week)
@@ -68,7 +69,8 @@ def run(args: argparse.Namespace) -> Path:
     summary = generate_summary(data, week, os.getenv("OPENAI_MODEL", "gpt-5-mini")) if ai_enabled else None
     render_site(output=destination, title=config.get("title", f'{data.league["name"]} Power Rankings'), league_name=data.league["name"], season=data.league["season"], week=week, rankings=rankings, summary=summary, playoffs=playoffs, standings=standings, luck=luck)
     (destination / "rankings.json").write_text(rankings.to_json(orient="records"))
-    values.to_csv(destination / "values.csv", index=False)
+    if not snapshot_path.exists():
+        values.to_csv(snapshot_path, index=False)
     (destination / "report.json").write_text(json.dumps({"league_id": str(league_id), "season": league["season"], "week": week}))
     return build_archive(args.content, args.output, config)
 

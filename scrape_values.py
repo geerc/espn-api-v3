@@ -28,6 +28,10 @@ def run(args):
     week = config.week if config.week is not None else league.nfl_week - 1
     if week < 1:
         raise ValueError("No completed fantasy week is available; pass --week explicitly if appropriate")
+    destination = config.player_values_dir / f"KTC_values_week{week}.csv"
+    if destination.exists():
+        print(f"Reusing saved KTC snapshot: {destination}")
+        return destination
 
     with build_session() as session:
         redraft = scrape_rankings(session, REDRAFT_URL, 8, "redraft")

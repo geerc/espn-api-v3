@@ -53,7 +53,7 @@ class AppConfig:
             openai_api_key=os.getenv("OPEN_AI_KEY"),
             year=year or datetime.now().year,
             week=week,
-            player_values_dir=SCRIPT_DIR / "player_values",
+            player_values_dir=Path(os.getenv("PLAYER_VALUES_DIR", SCRIPT_DIR / "player_values")).expanduser(),
             names_file=SCRIPT_DIR / "fantasy_pros_names.csv",
             report_root=report_root,
             simulations=simulations,

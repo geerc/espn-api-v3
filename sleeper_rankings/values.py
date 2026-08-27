@@ -11,6 +11,17 @@ REDRAFT_URL = "https://keeptradecut.com/fantasy-rankings?page={}&filters=QB|WR|R
 DYNASTY_URL = "https://keeptradecut.com/dynasty-rankings?page={}&filters=QB|WR|RB|TE&format=1"
 
 
+def weekly_values(path, *, overwrite=False, dynasty_weight=0.0):
+    if path.exists():
+        frame = pd.read_csv(path)
+        if frame.empty or not {"name", "position", "nfl_team", "value"}.issubset(frame.columns):
+            raise ValueError(f"Invalid saved KTC snapshot: {path}")
+        return frame
+    if overwrite:
+        raise ValueError(f"Missing KTC snapshot for correction: {path}; refusing to substitute today's values")
+    return fetch_values(dynasty_weight)
+
+
 def _scrape(session: requests.Session, template: str, pages: int) -> pd.DataFrame:
     records = []
     for page in range(pages):
@@ -46,4 +57,3 @@ def fetch_values(dynasty_weight: float = 0.0) -> pd.DataFrame:
     merged["value"] = merged["value_redraft"].fillna(0) * (1 - dynasty_weight) + merged["value_dynasty"].fillna(0) * dynasty_weight
     metadata = pd.concat([redraft, dynasty]).drop_duplicates("name")[["name", "position", "nfl_team"]]
     return merged[["name", "value"]].merge(metadata, on="name", how="left")
-
