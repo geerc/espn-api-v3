@@ -27,11 +27,16 @@ By default, reports and radar images are written to `draft_report/reports/<seaso
 
 ## Optional AI commentary
 
-Reports remain commentary-free by default. To add a concise statistical assessment for each team, set the API key in your shell and enable the flag:
+Reports remain commentary-free by default. To add a concise statistical assessment for each team, create a local `.env` file in the repository root:
 
 ```shell
-export OPENAI_API_KEY="your-api-key"
+cp .env.example .env
+```
+
+Open `.env`, replace the placeholder with your key, and save it. Then enable commentary when generating the report:
+
+```shell
 venv/bin/sleeper-draft-report 1388595531374157824 --ai-commentary
 ```
 
-Use `--ai-model MODEL` or the `OPENAI_MODEL` environment variable to override the default `gpt-5-mini` model. Do not commit API keys to Git.
+The command automatically loads `.env` from the repository root. The file is excluded by `.gitignore`, so it will not be committed. You can optionally set `OPENAI_MODEL` in the same file or use `--ai-model MODEL` to override the default `gpt-5-mini` model.

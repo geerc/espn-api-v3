@@ -1,8 +1,10 @@
+import os
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
+import draft_report.sleeper_draft_report as draft_report
 from draft_report.sleeper_draft_report import (
     PlayerProjection,
     add_kicker_vor_and_rerank,
@@ -20,6 +22,18 @@ from draft_report.sleeper_draft_report import (
 
 def player(name, position, points, rank=1):
     return PlayerProjection(name, position, "NFL", points, points - 100, rank)
+
+
+def test_parse_args_loads_local_environment(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("OPENAI_MODEL=test-model\n", encoding="utf-8")
+    monkeypatch.setattr(draft_report, "LOCAL_ENV_FILE", env_file)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+
+    args = draft_report.parse_args(["123"])
+
+    assert args.ai_model == "test-model"
+    assert os.environ["OPENAI_MODEL"] == "test-model"
 
 
 def test_normalize_name_handles_suffixes_and_punctuation():

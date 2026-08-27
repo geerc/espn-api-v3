@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 from openai import OpenAI, OpenAIError
 
 try:
@@ -39,6 +40,7 @@ FLEX_ELIGIBILITY = {
 POSITION_ALIASES = {"DEF": "DST"}
 DEFAULT_VOR_BASELINE = {"QB": 13, "RB": 35, "WR": 36, "TE": 13, "K": 8, "DST": 3}
 DEFAULT_AI_MODEL = "gpt-5-mini"
+LOCAL_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 NFL_TEAM_CODES = {
     "arizona cardinals": "ARI", "atlanta falcons": "ATL", "baltimore ravens": "BAL",
     "buffalo bills": "BUF", "carolina panthers": "CAR", "chicago bears": "CHI",
@@ -408,6 +410,7 @@ def render_report(*, league, results):
 
 
 def parse_args(argv=None):
+    load_dotenv(LOCAL_ENV_FILE)
     parser = argparse.ArgumentParser(description="Generate a Sleeper post-draft rankings report.")
     parser.add_argument("league_id", help="Sleeper league ID")
     parser.add_argument("--output", type=Path, help="Output directory (defaults to the website content directory)")
