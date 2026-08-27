@@ -12,6 +12,7 @@ from draft_report.sleeper_draft_report import (
     generate_ai_commentary,
     generate_dummy_picks,
     cached_projection_path,
+    commentary_tone,
     league_context,
     normalize_name,
     radar_positions_for_league,
@@ -241,6 +242,15 @@ def test_league_context_distinguishes_best_ball_and_ppr():
     }
 
 
+def test_commentary_tone_tracks_overall_rank_without_becoming_one_sided():
+    assert commentary_tone(1, 12).startswith("strongly positive")
+    assert commentary_tone(4, 12).startswith("positive-leaning")
+    assert commentary_tone(8, 12).startswith("critical-leaning")
+    assert commentary_tone(12, 12).startswith("strongly critical")
+    assert "concern" in commentary_tone(1, 12)
+    assert "strength" in commentary_tone(12, 12)
+
+
 def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
     calls = []
 
@@ -281,9 +291,11 @@ def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
     assert statistics["position_ranks"] == {"QB": 3, "RB": 8}
     assert statistics["roster_construction"] == {"QB": 2, "RB": 6, "WR": 7, "TE": 2}
     assert statistics["league_context"]["format"] == "best ball"
+    assert statistics["editorial_tone"].startswith("strongly positive")
     assert statistics["roster"][0]["name"] == "Example Player"
     assert "do not recite" in calls[0]["instructions"]
     assert "a little bombastic" in calls[0]["instructions"]
+    assert "source of truth" in calls[0]["instructions"]
 
 
 def test_web_citations_are_rendered_as_clickable_markdown():

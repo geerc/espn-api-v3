@@ -451,6 +451,19 @@ def response_markdown_with_citations(response):
     return response.output_text.strip()
 
 
+def commentary_tone(overall_rank, league_size):
+    if league_size <= 1:
+        return "balanced: give comparable weight to the roster's strongest feature and biggest concern"
+    rank_percentile = (overall_rank - 1) / (league_size - 1)
+    if rank_percentile <= 0.25:
+        return "strongly positive: emphasize why this is an elite roster, while naming one credible concern"
+    if rank_percentile <= 0.50:
+        return "positive-leaning: emphasize the strengths, but explain at least one meaningful weakness"
+    if rank_percentile <= 0.75:
+        return "critical-leaning: emphasize the weaknesses, but identify at least one legitimate strength"
+    return "strongly critical: emphasize why this roster trails the league, while acknowledging one real strength"
+
+
 def generate_ai_commentary(
     *, league, results, api_key, model, client=None, workers=4,
     reasoning_effort=DEFAULT_AI_REASONING_EFFORT,
@@ -467,8 +480,11 @@ def generate_ai_commentary(
         "4-6 punchy sentences, explain where the roster construction thrives, where it falls short, and which "
         "players or position groups drive that verdict. Explicitly account for the supplied league format and "
         "scoring rules; best ball roster construction and risk tolerance differ from a managed-lineup league. "
-        "Use the projections, positional ranks, biggest value, and biggest reach as evidence rather than merely "
-        "repeating them. Be engaging, opinionated, colorful, and a little bombastic—celebrate sharp drafting and "
+        "Use overall rank as the source of truth for the analysis's sentiment and follow the supplied editorial "
+        "tone: higher-ranked teams should read more positively and lower-ranked teams more critically. Every "
+        "team must still receive at least one genuine strength and one genuine concern. Use the projections, "
+        "positional ranks, biggest value, and biggest reach as evidence rather than merely repeating them. Be "
+        "engaging, opinionated, colorful, and a little bombastic—celebrate sharp drafting and "
         "call out questionable decisions. Distinguish sourced facts from your analysis, never invent facts, and "
         "include inline citations for web-derived claims. Return prose without a heading or bullet list."
     )
@@ -479,6 +495,7 @@ def generate_ai_commentary(
             "team": result["team"],
             "overall_rank": result["rank"],
             "league_size": result["team_count"],
+            "editorial_tone": commentary_tone(result["rank"], result["team_count"]),
             "projected_starter_points": round(result["projected_points"], 1),
             "roster_construction": result.get("roster_construction", {}),
             "roster": result.get("roster", []),
