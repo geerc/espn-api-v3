@@ -11,6 +11,7 @@ from draft_report.sleeper_draft_report import (
     build_team_results,
     generate_ai_commentary,
     generate_dummy_picks,
+    league_context,
     normalize_name,
     radar_positions_for_league,
     rank_radar_values,
@@ -18,6 +19,7 @@ from draft_report.sleeper_draft_report import (
     pick_summary,
     projection_index,
     render_report,
+    response_markdown_with_citations,
 )
 
 
@@ -111,6 +113,10 @@ def test_team_results_are_worst_to_best_and_reach_value_use_actual_pick():
     assert results[0]["value"][1].name == "Alpha RB"
     assert results[0]["value"][2] == -10
     assert results[0]["roster_construction"] == {"QB": 1, "RB": 1}
+    assert results[0]["roster"] == [
+        {"name": "Alpha QB", "position": "QB", "season_projection": 300.0},
+        {"name": "Alpha RB", "position": "RB", "season_projection": 200.0},
+    ]
 
 
 def test_team_results_use_full_sleeper_roster():
@@ -205,7 +211,21 @@ def test_report_contains_only_structured_rankings_and_statistics():
     assert pick_summary(item["reach"]) in content
 
 
-def test_ai_commentary_is_opt_in_and_uses_only_team_statistics():
+def test_league_context_distinguishes_best_ball_and_ppr():
+    context = league_context({
+        "settings": {"best_ball": 1},
+        "scoring_settings": {"rec": 0.5},
+        "roster_positions": ["QB", "RB", "FLEX", "BN"],
+    })
+
+    assert context == {
+        "format": "best ball",
+        "reception_scoring": "half PPR",
+        "starting_lineup_slots": ["QB", "RB", "FLEX"],
+    }
+
+
+def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
     calls = []
 
     class FakeResponses:
@@ -221,23 +241,49 @@ def test_ai_commentary_is_opt_in_and_uses_only_team_statistics():
         "team_count": 12,
         "projected_points": 1900.25,
         "roster_construction": {"QB": 2, "RB": 6, "WR": 7, "TE": 2},
+        "roster": [{"name": "Example Player", "position": "WR", "season_projection": 200.0}],
         "position_ranks": {"QB": 3, "RB": 8, "K": None},
         "reach": (3, player("Reach", "WR", 100, rank=12), 9),
         "value": (30, player("Value", "RB", 100, rank=10), -20),
     }]
 
     generate_ai_commentary(
-        league={"name": "League"}, results=results, api_key=None,
+        league={
+            "name": "League", "settings": {"best_ball": 1},
+            "scoring_settings": {"rec": 1}, "roster_positions": ["QB", "RB", "WR", "FLEX", "BN"],
+        }, results=results, api_key=None,
         model="test-model", client=client,
     )
 
     assert results[0]["commentary"] == "Alpha is ranked #2."
     assert calls[0]["model"] == "test-model"
     assert calls[0]["store"] is False
+    assert calls[0]["tools"] == [{"type": "web_search"}]
+    assert calls[0]["tool_choice"] == "auto"
     statistics = __import__("json").loads(calls[0]["input"])
     assert statistics["position_ranks"] == {"QB": 3, "RB": 8}
     assert statistics["roster_construction"] == {"QB": 2, "RB": 6, "WR": 7, "TE": 2}
+    assert statistics["league_context"]["format"] == "best ball"
+    assert statistics["roster"][0]["name"] == "Example Player"
+    assert "do not recite" in calls[0]["instructions"]
     assert "a little bombastic" in calls[0]["instructions"]
+
+
+def test_web_citations_are_rendered_as_clickable_markdown():
+    annotation = SimpleNamespace(
+        type="url_citation", start_index=15, end_index=21,
+        title="FantasyPros analysis", url="https://www.fantasypros.com/example",
+    )
+    content = SimpleNamespace(
+        type="output_text", text="A strong claim source.", annotations=[annotation],
+    )
+    response = SimpleNamespace(
+        output=[SimpleNamespace(type="message", content=[content])], output_text=content.text,
+    )
+
+    assert response_markdown_with_citations(response) == (
+        "A strong claim [FantasyPros analysis](https://www.fantasypros.com/example)."
+    )
 
 
 def test_ai_commentary_requires_api_key_without_injected_client():

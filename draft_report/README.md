@@ -39,4 +39,4 @@ Open `.env`, replace the placeholder with your key, and save it. Then enable com
 venv/bin/sleeper-draft-report 1388595531374157824 --ai-commentary
 ```
 
-The command automatically loads `.env` from the repository root. The file is excluded by `.gitignore`, so it will not be committed. You can optionally set `OPENAI_MODEL` in the same file or use `--ai-model MODEL` to override the default `gpt-5-mini` model.
+The command automatically loads `.env` from the repository root. The file is excluded by `.gitignore`, so it will not be committed. You can optionally set `OPENAI_MODEL` in the same file or use `--ai-model MODEL` to override the default `gpt-5-mini` model. Commentary generation uses OpenAI web search to research current player context, adds clickable source citations, and may incur both model-token and web-search charges.

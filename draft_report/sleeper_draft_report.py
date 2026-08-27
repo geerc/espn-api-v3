@@ -256,6 +256,29 @@ def team_name(roster_id, rosters, users):
     return metadata.get("team_name") or user.get("display_name") or f"Roster {roster_id}"
 
 
+def league_context(league):
+    settings = league.get("settings") or {}
+    scoring = league.get("scoring_settings") or {}
+    reception_points = float(scoring.get("rec", 0) or 0)
+    if reception_points == 1:
+        reception_scoring = "full PPR"
+    elif reception_points == 0.5:
+        reception_scoring = "half PPR"
+    elif reception_points == 0:
+        reception_scoring = "standard/non-PPR"
+    else:
+        reception_scoring = f"{reception_points:g} points per reception"
+    return {
+        "format": "best ball" if int(settings.get("best_ball", 0) or 0) else "managed lineup",
+        "reception_scoring": reception_scoring,
+        "starting_lineup_slots": [
+            normalize_position(position)
+            for position in league.get("roster_positions", [])
+            if position not in {"BN", "IR", "TAXI"}
+        ],
+    }
+
+
 def build_team_results(*, league, rosters, users, picks, projections, player_catalog=None):
     drafted_by_roster = {}
     unmatched = []
@@ -296,6 +319,14 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
             "projected_points": score,
             "position_totals": position_totals,
             "roster_construction": dict(sorted(Counter(player.position for player in roster_players).items())),
+            "roster": [
+                {
+                    "name": player.name,
+                    "position": player.position,
+                    "season_projection": round(player.points, 1),
+                }
+                for player in sorted(roster_players, key=lambda player: (player.position, -player.points, player.name))
+            ],
             "reach": max(deltas, key=lambda item: item[2]) if deltas else None,
             "value": min(deltas, key=lambda item: item[2]) if deltas else None,
         })
@@ -365,6 +396,30 @@ def pick_summary(item):
     return f"{player.name} — pick {pick_no}, VOR rank {player.vor_rank} ({difference:+d})"
 
 
+def response_markdown_with_citations(response):
+    for item in getattr(response, "output", []):
+        if getattr(item, "type", None) != "message":
+            continue
+        for content in getattr(item, "content", []):
+            if getattr(content, "type", None) != "output_text":
+                continue
+            text = content.text
+            citations = []
+            for annotation in getattr(content, "annotations", []):
+                if getattr(annotation, "type", None) != "url_citation":
+                    continue
+                citations.append((
+                    annotation.start_index,
+                    annotation.end_index,
+                    annotation.title or "source",
+                    annotation.url,
+                ))
+            for start, end, title, url in sorted(citations, reverse=True):
+                text = f"{text[:start]}[{title}]({url}){text[end:]}"
+            return text.strip()
+    return response.output_text.strip()
+
+
 def generate_ai_commentary(*, league, results, api_key, model, client=None):
     if client is None:
         if not api_key:
@@ -372,21 +427,27 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None):
         client = OpenAI(api_key=api_key)
     instructions = (
         "Write as an energetic NFL draft commentator analyzing a fantasy football roster after the draft. "
-        "In 3-4 punchy sentences, take a clear opinion on the team's roster construction and outlook, "
-        "using its projected starter points, overall and positional ranks, roster makeup, biggest value, "
-        "and biggest reach. Be engaging, colorful, and a little bombastic—celebrate sharp drafting and call "
-        "out questionable decisions—but keep every judgment grounded in the supplied statistics. Do not "
-        "invent player traits, news, injuries, schedules, or facts that are not provided. Return plain prose "
-        "without a heading or bullet list."
+        "Act as an analyst, not a standings reader: do not recite the projected point total or overall league "
+        "rank, because the report already displays them. Research the roster's players using current, reputable "
+        "fantasy football sources such as ESPN, FantasyPros, CBS Sports, and official NFL or team coverage. In "
+        "4-6 punchy sentences, explain where the roster construction thrives, where it falls short, and which "
+        "players or position groups drive that verdict. Explicitly account for the supplied league format and "
+        "scoring rules; best ball roster construction and risk tolerance differ from a managed-lineup league. "
+        "Use the projections, positional ranks, biggest value, and biggest reach as evidence rather than merely "
+        "repeating them. Be engaging, opinionated, colorful, and a little bombastic—celebrate sharp drafting and "
+        "call out questionable decisions. Distinguish sourced facts from your analysis, never invent facts, and "
+        "include inline citations for web-derived claims. Return prose without a heading or bullet list."
     )
     for result in results:
         statistics = {
             "league": league["name"],
+            "league_context": league_context(league),
             "team": result["team"],
             "overall_rank": result["rank"],
             "league_size": result["team_count"],
             "projected_starter_points": round(result["projected_points"], 1),
             "roster_construction": result.get("roster_construction", {}),
+            "roster": result.get("roster", []),
             "position_ranks": {
                 position: rank
                 for position, rank in result["position_ranks"].items()
@@ -401,8 +462,10 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None):
             input=json.dumps(statistics),
             store=False,
             text={"verbosity": "low"},
+            tools=[{"type": "web_search"}],
+            tool_choice="auto",
         )
-        commentary = response.output_text.strip()
+        commentary = response_markdown_with_citations(response)
         if not commentary:
             raise ValueError(f"OpenAI returned empty commentary for {result['team']}")
         result["commentary"] = commentary
