@@ -11,6 +11,7 @@ from draft_report.sleeper_draft_report import (
     build_team_results,
     generate_ai_commentary,
     generate_dummy_picks,
+    cached_projection_path,
     league_context,
     normalize_name,
     radar_positions_for_league,
@@ -37,6 +38,19 @@ def test_parse_args_loads_local_environment(monkeypatch, tmp_path):
 
     assert args.ai_model == "test-model"
     assert os.environ["OPENAI_MODEL"] == "test-model"
+    assert args.ai_workers == 4
+    assert args.refresh_projections is False
+
+
+def test_projection_cache_is_scoped_by_season_and_scoring(tmp_path):
+    ppr = cached_projection_path(season=2026, scoring_settings={"rec": 1}, cache_dir=tmp_path)
+    standard = cached_projection_path(season=2026, scoring_settings={"rec": 0}, cache_dir=tmp_path)
+    next_season = cached_projection_path(season=2027, scoring_settings={"rec": 1}, cache_dir=tmp_path)
+
+    assert ppr.parent == tmp_path
+    assert ppr != standard
+    assert ppr != next_season
+    assert ppr.name.startswith("ffanalytics-2026-")
 
 
 def test_normalize_name_handles_suffixes_and_punctuation():

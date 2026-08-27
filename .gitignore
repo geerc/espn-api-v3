@@ -9,5 +9,6 @@ __pycache__/
 venv/
 .pytest_cache/
 draft_report/reports/
+draft_report/cache/
 build/
 *.egg-info/

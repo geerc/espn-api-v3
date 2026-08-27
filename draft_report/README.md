@@ -23,7 +23,7 @@ venv/bin/python -m draft_report.sleeper_draft_report 1388595531374157824 \
   --dummy-draft draft_report/tests/fixtures/dummy_sleeper_draft.json
 ```
 
-By default, reports and radar images are written to `draft_report/reports/<season>/` inside this repository. Use `--output PATH` to choose another destination. Use `--projections PATH` to reuse an existing `ffanalytics` CSV.
+By default, reports and radar images are written to `draft_report/reports/<season>/` inside this repository. Use `--output PATH` to choose another destination. ffanalytics projections are cached by season and scoring rules after the first run; use `--refresh-projections` when you want fresh projections, or `--projections PATH` to use a specific CSV.
 
 ## Optional AI commentary
 
@@ -39,4 +39,4 @@ Open `.env`, replace the placeholder with your key, and save it. Then enable com
 venv/bin/sleeper-draft-report 1388595531374157824 --ai-commentary
 ```
 
-The command automatically loads `.env` from the repository root. The file is excluded by `.gitignore`, so it will not be committed. You can optionally set `OPENAI_MODEL` in the same file or use `--ai-model MODEL` to override the default `gpt-5-mini` model. Commentary generation uses OpenAI web search to research current player context, adds clickable source citations, and may incur both model-token and web-search charges.
+The command automatically loads `.env` from the repository root. The file is excluded by `.gitignore`, so it will not be committed. You can optionally set `OPENAI_MODEL` in the same file or use `--ai-model MODEL` to override the default `gpt-5-mini` model. Commentary generation uses OpenAI web search to research current player context, adds clickable source citations, and may incur both model-token and web-search charges. Four teams are researched concurrently by default; use `--ai-workers NUMBER` or `OPENAI_AI_WORKERS` to adjust concurrency if your API rate limits require it.

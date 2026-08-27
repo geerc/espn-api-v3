@@ -1,13 +1,14 @@
 import argparse
+import hashlib
 import json
 import math
 import os
 import re
 import subprocess
 import sys
-import tempfile
 import unicodedata
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 from io import StringIO
@@ -42,6 +43,7 @@ POSITION_ALIASES = {"DEF": "DST"}
 DEFAULT_VOR_BASELINE = {"QB": 13, "RB": 35, "WR": 36, "TE": 13, "K": 8, "DST": 3}
 DEFAULT_AI_MODEL = "gpt-5-mini"
 LOCAL_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+PROJECTION_CACHE_DIR = Path(__file__).resolve().parent / "cache"
 NFL_TEAM_CODES = {
     "arizona cardinals": "ARI", "atlanta falcons": "ATL", "baltimore ravens": "BAL",
     "buffalo bills": "BUF", "carolina panthers": "CAR", "chicago bears": "CHI",
@@ -96,6 +98,34 @@ def run_ffanalytics(*, season, scoring_settings, output_path, rscript="Rscript")
         subprocess.run([rscript, str(script), str(season), str(scoring_path), str(output_path)], check=True)
     finally:
         scoring_path.unlink(missing_ok=True)
+
+
+def cached_projection_path(*, season, scoring_settings, cache_dir=None):
+    cache_dir = Path(cache_dir or PROJECTION_CACHE_DIR)
+    scoring_json = json.dumps(scoring_settings, sort_keys=True, separators=(",", ":"))
+    scoring_hash = hashlib.sha256(scoring_json.encode("utf-8")).hexdigest()[:12]
+    return cache_dir / f"ffanalytics-{season}-{scoring_hash}.csv"
+
+
+def get_projection_path(*, season, scoring_settings, rscript, refresh=False, cache_dir=None):
+    path = cached_projection_path(
+        season=season, scoring_settings=scoring_settings, cache_dir=cache_dir,
+    )
+    if path.exists() and not refresh:
+        print(f"Using cached ffanalytics projections from {path}")
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_suffix(".tmp.csv")
+    try:
+        run_ffanalytics(
+            season=season, scoring_settings=scoring_settings,
+            output_path=temporary_path, rscript=rscript,
+        )
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    print(f"Cached ffanalytics projections at {path}")
+    return path
 
 
 def load_ffanalytics(path):
@@ -420,7 +450,7 @@ def response_markdown_with_citations(response):
     return response.output_text.strip()
 
 
-def generate_ai_commentary(*, league, results, api_key, model, client=None):
+def generate_ai_commentary(*, league, results, api_key, model, client=None, workers=4):
     if client is None:
         if not api_key:
             raise ValueError("OPENAI_API_KEY is required when --ai-commentary is enabled")
@@ -438,7 +468,7 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None):
         "call out questionable decisions. Distinguish sourced facts from your analysis, never invent facts, and "
         "include inline citations for web-derived claims. Return prose without a heading or bullet list."
     )
-    for result in results:
+    def generate_for_team(result):
         statistics = {
             "league": league["name"],
             "league_context": league_context(league),
@@ -469,6 +499,17 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None):
         if not commentary:
             raise ValueError(f"OpenAI returned empty commentary for {result['team']}")
         result["commentary"] = commentary
+        return result["team"]
+
+    worker_count = min(max(1, int(workers)), max(1, len(results)))
+    if worker_count == 1:
+        for result in results:
+            print(f"Generated AI commentary for {generate_for_team(result)}")
+        return
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(generate_for_team, result) for result in results]
+        for future in as_completed(futures):
+            print(f"Generated AI commentary for {future.result()}")
 
 def render_report(*, league, results):
     sections = [
@@ -495,10 +536,12 @@ def parse_args(argv=None):
     parser.add_argument("league_id", help="Sleeper league ID")
     parser.add_argument("--output", type=Path, help="Output directory (defaults to the website content directory)")
     parser.add_argument("--projections", type=Path, help="Reuse an existing ffanalytics projection CSV")
+    parser.add_argument("--refresh-projections", action="store_true", help="Refresh cached ffanalytics projections")
     parser.add_argument("--dummy-draft", type=Path, help="Use draft picks from a dummy draft JSON file")
     parser.add_argument("--rscript", default="Rscript", help="Rscript executable")
     parser.add_argument("--ai-commentary", action="store_true", help="Add OpenAI-generated commentary for each team")
     parser.add_argument("--ai-model", default=os.getenv("OPENAI_MODEL", DEFAULT_AI_MODEL), help="OpenAI model used for commentary")
+    parser.add_argument("--ai-workers", type=int, default=int(os.getenv("OPENAI_AI_WORKERS", "4")), help="Concurrent AI commentary requests")
     return parser.parse_args(argv)
 
 
@@ -521,25 +564,23 @@ def run(args):
     users = {str(user["user_id"]): user for user in api_get(f"/league/{args.league_id}/users")}
     player_catalog = None if args.dummy_draft else api_get("/players/nfl")
     season = int(league["season"])
-    with tempfile.TemporaryDirectory() as temporary:
-        projection_path = args.projections
-        if projection_path is None:
-            projection_path = Path(temporary) / "ffanalytics.csv"
-            run_ffanalytics(
-                season=season, scoring_settings=league.get("scoring_settings", {}),
-                output_path=projection_path, rscript=args.rscript,
-            )
-        base = load_ffanalytics(projection_path)
-        if dummy is not None and not picks:
-            picks = generate_dummy_picks(
-                base, teams=int(dummy.get("teams", len(rosters))),
-                rounds=int(dummy.get("rounds", len(league["roster_positions"]))),
-                seed=int(dummy.get("seed", 2026)),
-            )
-        supplemental = pd.concat([
-            fetch_fantasypros_position("K"), fetch_fantasypros_position("DST"),
-        ], ignore_index=True)
-        projections = projection_index(add_supplemental_vor_and_rerank(base, supplemental))
+    projection_path = args.projections
+    if projection_path is None:
+        projection_path = get_projection_path(
+            season=season, scoring_settings=league.get("scoring_settings", {}),
+            rscript=args.rscript, refresh=getattr(args, "refresh_projections", False),
+        )
+    base = load_ffanalytics(projection_path)
+    if dummy is not None and not picks:
+        picks = generate_dummy_picks(
+            base, teams=int(dummy.get("teams", len(rosters))),
+            rounds=int(dummy.get("rounds", len(league["roster_positions"]))),
+            seed=int(dummy.get("seed", 2026)),
+        )
+    supplemental = pd.concat([
+        fetch_fantasypros_position("K"), fetch_fantasypros_position("DST"),
+    ], ignore_index=True)
+    projections = projection_index(add_supplemental_vor_and_rerank(base, supplemental))
     results, unmatched = build_team_results(
         league=league, rosters=rosters, users=users, picks=picks, projections=projections,
         player_catalog=player_catalog,
@@ -548,6 +589,7 @@ def run(args):
     if args.ai_commentary:
         generate_ai_commentary(
             league=league, results=results, api_key=os.getenv("OPENAI_API_KEY"), model=args.ai_model,
+            workers=getattr(args, "ai_workers", 4),
         )
     output_dir = (
         args.output or Path(__file__).resolve().parent / "reports" / str(season)
