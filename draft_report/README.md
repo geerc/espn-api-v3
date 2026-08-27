@@ -1,6 +1,6 @@
 # Draft Report
 
-Generates commentary-free post-draft rankings for Sleeper fantasy football leagues. Teams are ranked by their highest-projected legal starting lineup using `ffanalytics` season projections. The report includes normalized positional radar charts plus each team's biggest draft reach and value.
+Generates commentary-free post-draft rankings for Sleeper fantasy football leagues. Teams are ranked by their highest-projected legal starting lineup using `ffanalytics` season projections. The report includes league-ranked positional radar charts plus each team's biggest draft reach and value.
 
 ## Setup
 
@@ -23,4 +23,15 @@ venv/bin/python -m draft_report.sleeper_draft_report 1388595531374157824 \
   --dummy-draft draft_report/tests/fixtures/dummy_sleeper_draft.json
 ```
 
-By default, reports and radar images are written to `reports/<season>/` inside this project. Use `--output PATH` to choose another destination. Use `--projections PATH` to reuse an existing `ffanalytics` CSV.
+By default, reports and radar images are written to `draft_report/reports/<season>/` inside this repository. Use `--output PATH` to choose another destination. Use `--projections PATH` to reuse an existing `ffanalytics` CSV.
+
+## Optional AI commentary
+
+Reports remain commentary-free by default. To add a concise statistical assessment for each team, set the API key in your shell and enable the flag:
+
+```shell
+export OPENAI_API_KEY="your-api-key"
+venv/bin/sleeper-draft-report 1388595531374157824 --ai-commentary
+```
+
+Use `--ai-model MODEL` or the `OPENAI_MODEL` environment variable to override the default `gpt-5-mini` model. Do not commit API keys to Git.

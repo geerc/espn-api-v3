@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
+from openai import OpenAI, OpenAIError
 
 try:
     from .report import write_report_atomic
@@ -36,6 +38,7 @@ FLEX_ELIGIBILITY = {
 }
 POSITION_ALIASES = {"DEF": "DST"}
 DEFAULT_VOR_BASELINE = {"QB": 13, "RB": 35, "WR": 36, "TE": 13, "K": 8, "DST": 3}
+DEFAULT_AI_MODEL = "gpt-5-mini"
 NFL_TEAM_CODES = {
     "arizona cardinals": "ARI", "atlanta falcons": "ATL", "baltimore ravens": "BAL",
     "buffalo bills": "BUF", "carolina panthers": "CAR", "chicago bears": "CHI",
@@ -299,21 +302,32 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
     return results, unmatched
 
 
-def normalize_radar_values(results):
+def rank_radar_values(results):
+    team_count = len(results)
+    for item in results:
+        item["team_count"] = team_count
     for position in RADAR_POSITIONS:
-        values = [item["position_totals"][position] for item in results]
-        low, high = min(values), max(values)
-        for item, value in zip(results, values):
-            if high == low:
-                normalized = 0.0 if high == 0 else 50.0
-            else:
-                normalized = 100 * (value - low) / (high - low)
-            item.setdefault("radar", {})[position] = normalized
+        values = pd.Series([item["position_totals"][position] for item in results])
+        if values.max() == 0:
+            for item in results:
+                item.setdefault("position_ranks", {})[position] = None
+                item.setdefault("radar", {})[position] = 0
+            continue
+        ranks = values.rank(method="min", ascending=False).astype(int)
+        for item, rank in zip(results, ranks):
+            item.setdefault("position_ranks", {})[position] = int(rank)
+            item.setdefault("radar", {})[position] = team_count + 1 - int(rank)
 
 
 def render_radar(result, path):
-    labels = list(RADAR_POSITIONS)
-    values = [result["radar"][position] for position in labels]
+    labels = [
+        f'{position}\n#{result["position_ranks"][position]}'
+        if result["position_ranks"][position] is not None
+        else f"{position}\nN/A"
+        for position in RADAR_POSITIONS
+    ]
+    values = [result["radar"][position] for position in RADAR_POSITIONS]
+    team_count = result["team_count"]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
@@ -321,7 +335,7 @@ def render_radar(result, path):
     axis.plot(angles, values, color="#2563eb", linewidth=2)
     axis.fill(angles, values, color="#60a5fa", alpha=0.35)
     axis.set_xticks(angles[:-1], labels)
-    axis.set_ylim(0, 100)
+    axis.set_ylim(0, team_count)
     axis.set_yticklabels([])
     axis.grid(alpha=0.3)
     figure.tight_layout()
@@ -335,6 +349,44 @@ def pick_summary(item):
     pick_no, player, difference = item
     return f"{player.name} — pick {pick_no}, VOR rank {player.vor_rank} ({difference:+d})"
 
+
+def generate_ai_commentary(*, league, results, api_key, model, client=None):
+    if client is None:
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required when --ai-commentary is enabled")
+        client = OpenAI(api_key=api_key)
+    instructions = (
+        "Write one concise 2-3 sentence fantasy football draft assessment. "
+        "Use only the supplied statistics. Do not invent player traits, news, injuries, "
+        "schedule claims, or unsupported conclusions. Mention positional ranks only when useful. "
+        "Return plain prose without a heading or bullet list."
+    )
+    for result in results:
+        statistics = {
+            "league": league["name"],
+            "team": result["team"],
+            "overall_rank": result["rank"],
+            "league_size": result["team_count"],
+            "projected_starter_points": round(result["projected_points"], 1),
+            "position_ranks": {
+                position: rank
+                for position, rank in result["position_ranks"].items()
+                if rank is not None
+            },
+            "biggest_reach": pick_summary(result["reach"]),
+            "biggest_value": pick_summary(result["value"]),
+        }
+        response = client.responses.create(
+            model=model,
+            instructions=instructions,
+            input=json.dumps(statistics),
+            store=False,
+            text={"verbosity": "low"},
+        )
+        commentary = response.output_text.strip()
+        if not commentary:
+            raise ValueError(f"OpenAI returned empty commentary for {result['team']}")
+        result["commentary"] = commentary
 
 def render_report(*, league, results):
     sections = [
@@ -350,6 +402,8 @@ def render_report(*, league, results):
             f"**Biggest Reach:** {pick_summary(result['reach'])}", "",
             f"**Biggest Value:** {pick_summary(result['value'])}", "",
         ])
+        if result.get("commentary"):
+            sections.extend([result["commentary"], ""])
     return "\n".join(sections)
 
 
@@ -360,6 +414,8 @@ def parse_args(argv=None):
     parser.add_argument("--projections", type=Path, help="Reuse an existing ffanalytics projection CSV")
     parser.add_argument("--dummy-draft", type=Path, help="Use draft picks from a dummy draft JSON file")
     parser.add_argument("--rscript", default="Rscript", help="Rscript executable")
+    parser.add_argument("--ai-commentary", action="store_true", help="Add OpenAI-generated commentary for each team")
+    parser.add_argument("--ai-model", default=os.getenv("OPENAI_MODEL", DEFAULT_AI_MODEL), help="OpenAI model used for commentary")
     return parser.parse_args(argv)
 
 
@@ -405,7 +461,11 @@ def run(args):
         league=league, rosters=rosters, users=users, picks=picks, projections=projections,
         player_catalog=player_catalog,
     )
-    normalize_radar_values(results)
+    rank_radar_values(results)
+    if args.ai_commentary:
+        generate_ai_commentary(
+            league=league, results=results, api_key=os.getenv("OPENAI_API_KEY"), model=args.ai_model,
+        )
     output_dir = (
         args.output or Path(__file__).resolve().parent / "reports" / str(season)
     ).expanduser().resolve()
@@ -422,7 +482,7 @@ def run(args):
 def main(argv=None):
     try:
         run(parse_args(argv))
-    except (OSError, subprocess.CalledProcessError, requests.RequestException, ValueError) as error:
+    except (OSError, subprocess.CalledProcessError, requests.RequestException, ValueError, OpenAIError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
     return 0

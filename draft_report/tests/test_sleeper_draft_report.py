@@ -7,9 +7,10 @@ from draft_report.sleeper_draft_report import (
     PlayerProjection,
     add_kicker_vor_and_rerank,
     build_team_results,
+    generate_ai_commentary,
     generate_dummy_picks,
     normalize_name,
-    normalize_radar_values,
+    rank_radar_values,
     optimize_lineup,
     pick_summary,
     projection_index,
@@ -140,14 +141,16 @@ def test_dummy_draft_is_reproducible_randomized_snake():
     assert [pick["metadata"] for pick in first] != [pick["metadata"] for pick in different]
 
 
-def test_radar_normalization_hides_raw_values_from_report():
+def test_radar_uses_positional_rank_among_teams():
     results = [
         {"position_totals": {position: 100 for position in ("QB", "RB", "WR", "TE", "K", "DST")}},
         {"position_totals": {position: 200 for position in ("QB", "RB", "WR", "TE", "K", "DST")}},
     ]
-    normalize_radar_values(results)
-    assert set(results[0]["radar"].values()) == {0}
-    assert set(results[1]["radar"].values()) == {100}
+    rank_radar_values(results)
+    assert set(results[0]["position_ranks"].values()) == {2}
+    assert set(results[1]["position_ranks"].values()) == {1}
+    assert set(results[0]["radar"].values()) == {1}
+    assert set(results[1]["radar"].values()) == {2}
 
 
 def test_radar_all_zero_position_stays_at_zero():
@@ -155,10 +158,12 @@ def test_radar_all_zero_position_stays_at_zero():
     totals["K"] = 0
     results = [{"position_totals": totals}]
 
-    normalize_radar_values(results)
+    rank_radar_values(results)
 
+    assert results[0]["position_ranks"]["K"] is None
     assert results[0]["radar"]["K"] == 0
-    assert results[0]["radar"]["QB"] == 50
+    assert results[0]["position_ranks"]["QB"] == 1
+    assert results[0]["radar"]["QB"] == 1
 
 
 def test_report_contains_only_structured_rankings_and_statistics():
@@ -173,3 +178,52 @@ def test_report_contains_only_structured_rankings_and_statistics():
     assert "Projected starter points:** 1234.6" in content
     assert "team-7-radar.png" in content
     assert pick_summary(item["reach"]) in content
+
+
+def test_ai_commentary_is_opt_in_and_uses_only_team_statistics():
+    calls = []
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            statistics = __import__("json").loads(kwargs["input"])
+            return SimpleNamespace(output_text=f'{statistics["team"]} is ranked #{statistics["overall_rank"]}.')
+
+    client = SimpleNamespace(responses=FakeResponses())
+    results = [{
+        "team": "Alpha",
+        "rank": 2,
+        "team_count": 12,
+        "projected_points": 1900.25,
+        "position_ranks": {"QB": 3, "RB": 8, "K": None},
+        "reach": (3, player("Reach", "WR", 100, rank=12), 9),
+        "value": (30, player("Value", "RB", 100, rank=10), -20),
+    }]
+
+    generate_ai_commentary(
+        league={"name": "League"}, results=results, api_key=None,
+        model="test-model", client=client,
+    )
+
+    assert results[0]["commentary"] == "Alpha is ranked #2."
+    assert calls[0]["model"] == "test-model"
+    assert calls[0]["store"] is False
+    assert __import__("json").loads(calls[0]["input"])["position_ranks"] == {"QB": 3, "RB": 8}
+
+
+def test_ai_commentary_requires_api_key_without_injected_client():
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        generate_ai_commentary(
+            league={"name": "League"}, results=[], api_key=None, model="test-model",
+        )
+
+
+def test_report_includes_commentary_only_when_present():
+    item = {
+        "rank": 1, "roster_id": 7, "team": "Champions", "projected_points": 1234.56,
+        "reach": None, "value": None, "commentary": "A concise statistical assessment.",
+    }
+
+    content = render_report(league={"season": "2026", "name": "League"}, results=[item])
+
+    assert "A concise statistical assessment." in content
