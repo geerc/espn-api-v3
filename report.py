@@ -6,7 +6,7 @@ from tabulate import tabulate
 
 
 def render_report(*, year, week, rankings, summary, playoff_probabilities, expected_standings, luck_index):
-    sections = ["+++", f'title = "Week {week} {year} Report"', f'date = "{date.today()}"', f'cover = {{ image = "week{week}_image.jpeg" }}', "draft = false", "+++", "", "# POWER RANKINGS", "", tabulate(rankings, headers="keys", tablefmt="pipe", showindex=True)]
+    sections = ["+++", f'title = "Week {week} {year} Report"', f'date = "{date.today()}"', "draft = false", "+++", "", "# POWER RANKINGS", "", tabulate(rankings, headers="keys", tablefmt="pipe", showindex=True)]
     if summary:
         sections.extend(["", summary])
     if playoff_probabilities is not None:

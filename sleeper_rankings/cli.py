@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .api import SleeperClient
+from .archive import build_archive, entry_path, with_previous
 from .loader import completed_week, load_league
 from .rankings import add_weekly_change, luck_index, playoff_probabilities, power_rankings, projected_standings
 from .render import render_preseason, render_site
@@ -22,12 +23,16 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--week", type=int)
     result.add_argument("--output", type=Path, default=Path("dist"))
     result.add_argument("--skip-ai", action="store_true")
+    result.add_argument("--content", type=Path, default=Path("content/reports"))
+    result.add_argument("--archive-only", action="store_true", help="Render saved entries without generating new reports")
     return result
 
 
 def run(args: argparse.Namespace) -> Path:
     load_dotenv()
     config = json.loads(args.config.read_text(encoding="utf-8")) if args.config.exists() else {}
+    if args.archive_only:
+        return build_archive(args.content, args.output, config)
     league_id = args.league_id or os.getenv("SLEEPER_LEAGUE_ID") or config.get("league_id")
     if not league_id:
         raise ValueError("A Sleeper league ID is required")
@@ -41,13 +46,15 @@ def run(args: argparse.Namespace) -> Path:
             league_name=league["name"],
             season=league["season"],
         )
+    destination = entry_path(args.content, league_id, league["season"], week)
+    if destination.exists():
+        raise ValueError(f"Report already exists: {destination}; refusing to overwrite it")
     data = load_league(client, str(league_id), through_week=week)
     if not any(team.players for team in data.teams):
         raise ValueError("The league has no populated rosters yet")
     values = fetch_values(float(config.get("dynasty_weight", 0)))
     rankings = power_rankings(data, week, values)
-    if week > 1:
-        rankings = add_weekly_change(rankings, power_rankings(data, week - 1, values))
+    rankings = with_previous(rankings, args.content, league_id, league["season"], week)
     standings = projected_standings(data, rankings, week)
     luck = luck_index(data, week)
     playoffs = None
@@ -56,7 +63,11 @@ def run(args: argparse.Namespace) -> Path:
         playoffs = playoff_probabilities(data, rankings, week, int(config.get("simulations", 100000)), config.get("random_seed"))
     ai_enabled = bool(config.get("ai_recap", False)) and not args.skip_ai
     summary = generate_summary(data, week, os.getenv("OPENAI_MODEL", "gpt-5-mini")) if ai_enabled else None
-    return render_site(output=args.output, title=config.get("title", f'{data.league["name"]} Power Rankings'), league_name=data.league["name"], season=data.league["season"], week=week, rankings=rankings, summary=summary, playoffs=playoffs, standings=standings, luck=luck)
+    render_site(output=destination, title=config.get("title", f'{data.league["name"]} Power Rankings'), league_name=data.league["name"], season=data.league["season"], week=week, rankings=rankings, summary=summary, playoffs=playoffs, standings=standings, luck=luck)
+    (destination / "rankings.json").write_text(rankings.to_json(orient="records"))
+    values.to_csv(destination / "values.csv", index=False)
+    (destination / "report.json").write_text(json.dumps({"league_id": str(league_id), "season": league["season"], "week": week}))
+    return build_archive(args.content, args.output, config)
 
 
 def main(argv=None) -> int:

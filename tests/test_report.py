@@ -10,6 +10,8 @@ def test_report_rendering_handles_optional_sections():
     assert "Week 1 2026 Report" in content
     assert "Current Playoff Probabilities" not in content
     assert "Projected Standings" in content
+    assert "cover" not in content
+    assert ".jpeg" not in content
 
 
 def test_atomic_report_write_creates_parent_directory(tmp_path):

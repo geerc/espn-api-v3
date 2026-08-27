@@ -2,7 +2,7 @@ name: SYPIP Power Rankings
 league: sypip
 
 repository:
-  path: ../sleeper-power-rankings
+  path: ../SYPIP
   remote: git@github.com:geerc/sleeper-power-rankings.git
 
 deployment:
