@@ -12,6 +12,7 @@ from draft_report.sleeper_draft_report import (
     generate_ai_commentary,
     generate_dummy_picks,
     normalize_name,
+    radar_positions_for_league,
     rank_radar_values,
     optimize_lineup,
     pick_summary,
@@ -109,6 +110,7 @@ def test_team_results_are_worst_to_best_and_reach_value_use_actual_pick():
     assert results[0]["reach"][2] == 9
     assert results[0]["value"][1].name == "Alpha RB"
     assert results[0]["value"][2] == -10
+    assert results[0]["roster_construction"] == {"QB": 1, "RB": 1}
 
 
 def test_team_results_use_full_sleeper_roster():
@@ -180,6 +182,15 @@ def test_radar_all_zero_position_stays_at_zero():
     assert results[0]["radar"]["QB"] == 1
 
 
+def test_radar_omits_kicker_and_defense_when_league_does_not_use_them():
+    assert radar_positions_for_league(["QB", "RB", "WR", "TE", "FLEX", "BN"]) == (
+        "QB", "RB", "WR", "TE",
+    )
+    assert radar_positions_for_league(["QB", "RB", "WR", "TE", "K", "DEF", "BN"]) == (
+        "QB", "RB", "WR", "TE", "K", "DST",
+    )
+
+
 def test_report_contains_only_structured_rankings_and_statistics():
     item = {
         "rank": 1, "roster_id": 7, "team": "Champions", "projected_points": 1234.56,
@@ -209,6 +220,7 @@ def test_ai_commentary_is_opt_in_and_uses_only_team_statistics():
         "rank": 2,
         "team_count": 12,
         "projected_points": 1900.25,
+        "roster_construction": {"QB": 2, "RB": 6, "WR": 7, "TE": 2},
         "position_ranks": {"QB": 3, "RB": 8, "K": None},
         "reach": (3, player("Reach", "WR", 100, rank=12), 9),
         "value": (30, player("Value", "RB", 100, rank=10), -20),
@@ -222,7 +234,10 @@ def test_ai_commentary_is_opt_in_and_uses_only_team_statistics():
     assert results[0]["commentary"] == "Alpha is ranked #2."
     assert calls[0]["model"] == "test-model"
     assert calls[0]["store"] is False
-    assert __import__("json").loads(calls[0]["input"])["position_ranks"] == {"QB": 3, "RB": 8}
+    statistics = __import__("json").loads(calls[0]["input"])
+    assert statistics["position_ranks"] == {"QB": 3, "RB": 8}
+    assert statistics["roster_construction"] == {"QB": 2, "RB": 6, "WR": 7, "TE": 2}
+    assert "a little bombastic" in calls[0]["instructions"]
 
 
 def test_ai_commentary_requires_api_key_without_injected_client():

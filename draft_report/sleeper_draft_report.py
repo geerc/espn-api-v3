@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from io import StringIO
@@ -294,6 +295,7 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
             "team": team_name(roster_id, rosters, users),
             "projected_points": score,
             "position_totals": position_totals,
+            "roster_construction": dict(sorted(Counter(player.position for player in roster_players).items())),
             "reach": max(deltas, key=lambda item: item[2]) if deltas else None,
             "value": min(deltas, key=lambda item: item[2]) if deltas else None,
         })
@@ -304,11 +306,21 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
     return results, unmatched
 
 
-def rank_radar_values(results):
+def radar_positions_for_league(roster_positions):
+    league_positions = {normalize_position(position) for position in roster_positions}
+    return tuple(
+        position
+        for position in RADAR_POSITIONS
+        if position not in {"K", "DST"} or position in league_positions
+    )
+
+
+def rank_radar_values(results, positions=RADAR_POSITIONS):
     team_count = len(results)
     for item in results:
         item["team_count"] = team_count
-    for position in RADAR_POSITIONS:
+        item["radar_positions"] = tuple(positions)
+    for position in positions:
         values = pd.Series([item["position_totals"][position] for item in results])
         if values.max() == 0:
             for item in results:
@@ -322,18 +334,19 @@ def rank_radar_values(results):
 
 
 def render_radar(result, path):
+    positions = result.get("radar_positions", RADAR_POSITIONS)
     labels = [
         f'{position}\n#{result["position_ranks"][position]}'
         if result["position_ranks"][position] is not None
         else f"{position}\nN/A"
-        for position in RADAR_POSITIONS
+        for position in positions
     ]
-    values = [result["radar"][position] for position in RADAR_POSITIONS]
+    values = [result["radar"][position] for position in positions]
     team_count = result["team_count"]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     values += values[:1]
     angles += angles[:1]
-    figure, axis = plt.subplots(figsize=(6, 6), subplot_kw={"polar": True})
+    figure, axis = plt.subplots(figsize=(4, 4), subplot_kw={"polar": True})
     axis.plot(angles, values, color="#2563eb", linewidth=2)
     axis.fill(angles, values, color="#60a5fa", alpha=0.35)
     axis.set_xticks(angles[:-1], labels)
@@ -341,7 +354,7 @@ def render_radar(result, path):
     axis.set_yticklabels([])
     axis.grid(alpha=0.3)
     figure.tight_layout()
-    figure.savefig(path, dpi=160, bbox_inches="tight", transparent=True)
+    figure.savefig(path, dpi=130, bbox_inches="tight", transparent=True)
     plt.close(figure)
 
 
@@ -358,10 +371,13 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None):
             raise ValueError("OPENAI_API_KEY is required when --ai-commentary is enabled")
         client = OpenAI(api_key=api_key)
     instructions = (
-        "Write one concise 2-3 sentence fantasy football draft assessment. "
-        "Use only the supplied statistics. Do not invent player traits, news, injuries, "
-        "schedule claims, or unsupported conclusions. Mention positional ranks only when useful. "
-        "Return plain prose without a heading or bullet list."
+        "Write as an energetic NFL draft commentator analyzing a fantasy football roster after the draft. "
+        "In 3-4 punchy sentences, take a clear opinion on the team's roster construction and outlook, "
+        "using its projected starter points, overall and positional ranks, roster makeup, biggest value, "
+        "and biggest reach. Be engaging, colorful, and a little bombastic—celebrate sharp drafting and call "
+        "out questionable decisions—but keep every judgment grounded in the supplied statistics. Do not "
+        "invent player traits, news, injuries, schedules, or facts that are not provided. Return plain prose "
+        "without a heading or bullet list."
     )
     for result in results:
         statistics = {
@@ -370,6 +386,7 @@ def generate_ai_commentary(*, league, results, api_key, model, client=None):
             "overall_rank": result["rank"],
             "league_size": result["team_count"],
             "projected_starter_points": round(result["projected_points"], 1),
+            "roster_construction": result.get("roster_construction", {}),
             "position_ranks": {
                 position: rank
                 for position, rank in result["position_ranks"].items()
@@ -464,7 +481,7 @@ def run(args):
         league=league, rosters=rosters, users=users, picks=picks, projections=projections,
         player_catalog=player_catalog,
     )
-    rank_radar_values(results)
+    rank_radar_values(results, radar_positions_for_league(league["roster_positions"]))
     if args.ai_commentary:
         generate_ai_commentary(
             league=league, results=results, api_key=os.getenv("OPENAI_API_KEY"), model=args.ai_model,
