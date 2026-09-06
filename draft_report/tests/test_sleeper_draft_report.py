@@ -9,6 +9,7 @@ from draft_report.sleeper_draft_report import (
     PlayerProjection,
     add_kicker_vor_and_rerank,
     build_team_results,
+    combine_supplemental_projections,
     draft_impact_score,
     generate_ai_commentary,
     generate_dummy_picks,
@@ -98,6 +99,21 @@ def test_kicker_vor_is_merged_before_overall_reranking():
     assert result.loc[result["name"] == "K One", "points_vor"].item() == 20
     assert result.loc[result["name"] == "Quarterback", "rank"].item() == 1
     assert result.loc[result["name"] == "K One", "rank"].item() == 2
+
+
+def test_supplemental_projections_prefer_later_source_values():
+    cbs = pd.DataFrame([
+        {"name": "K One", "team": "DAL", "position": "K", "points": 140},
+        {"name": "K Two", "team": "BAL", "position": "K", "points": 120},
+    ])
+    fantasypros = pd.DataFrame([
+        {"name": "K One", "team": "DAL", "position": "K", "points": 145},
+    ])
+
+    result = combine_supplemental_projections(cbs, fantasypros)
+
+    assert len(result) == 2
+    assert result.loc[result["name"] == "K One", "points"].item() == 145
 
 
 def test_team_results_are_worst_to_best_and_reach_value_use_actual_pick():

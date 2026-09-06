@@ -32,6 +32,7 @@ except ImportError:  # Support direct execution from the draft_report directory.
 SLEEPER_API = "https://api.sleeper.app/v1"
 FANTASYPROS_KICKERS = "https://www.fantasypros.com/nfl/projections/k.php?week=draft"
 FANTASYPROS_DEFENSES = "https://www.fantasypros.com/nfl/projections/dst.php?week=draft"
+CBS_PROJECTIONS = "https://www.cbssports.com/fantasy/football/stats/{position}/{season}/restofseason/projections/nonppr/"
 RADAR_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DST")
 FLEX_ELIGIBILITY = {
     "FLEX": {"RB", "WR", "TE"},
@@ -57,6 +58,16 @@ NFL_TEAM_CODES = {
     "new york jets": "NYJ", "philadelphia eagles": "PHI", "pittsburgh steelers": "PIT",
     "san francisco 49ers": "SF", "seattle seahawks": "SEA", "tampa bay buccaneers": "TB",
     "tennessee titans": "TEN", "washington commanders": "WAS",
+}
+CBS_DST_CODES = {
+    "Arizona": "ARI", "Atlanta": "ATL", "Baltimore": "BAL", "Buffalo": "BUF",
+    "Carolina": "CAR", "Chicago": "CHI", "Cincinnati": "CIN", "Cleveland": "CLE",
+    "Dallas": "DAL", "Denver": "DEN", "Detroit": "DET", "Green Bay": "GB",
+    "Houston": "HOU", "Indianapolis": "IND", "Jacksonville": "JAX", "Kansas City": "KC",
+    "L.A. Chargers": "LAC", "L.A. Rams": "LAR", "Las Vegas": "LV", "Miami": "MIA",
+    "Minnesota": "MIN", "N.Y. Giants": "NYG", "N.Y. Jets": "NYJ", "New England": "NE",
+    "New Orleans": "NO", "Philadelphia": "PHI", "Pittsburgh": "PIT", "San Francisco": "SF",
+    "Seattle": "SEA", "Tampa Bay": "TB", "Tennessee": "TEN", "Washington": "WAS",
 }
 PLAYER_NAME_ALIASES = {
     "chigokonkwo": "chigoziemokonkwo",
@@ -161,6 +172,51 @@ def fetch_fantasypros_position(position, *, session=requests):
         "points": pd.to_numeric(table[points_column], errors="coerce"),
     }).dropna(subset=["points"])
     return result
+
+
+def fetch_cbs_position(position, season, *, session=requests):
+    response = session.get(
+        CBS_PROJECTIONS.format(position=position, season=season),
+        timeout=30, headers={"User-Agent": "Mozilla/5.0"},
+    )
+    response.raise_for_status()
+    tables = pd.read_html(StringIO(response.text))
+    if not tables:
+        raise ValueError(f"CBS {position} projections table was not found")
+    table = tables[0]
+    player_column = table.columns[0]
+    points_column = next(
+        (column for column in table.columns if str(column[-1] if isinstance(column, tuple) else column).startswith("fpts")),
+        None,
+    )
+    if points_column is None:
+        raise ValueError(f"CBS {position} projections did not contain a fantasy-points column")
+    points = pd.to_numeric(table[points_column], errors="coerce")
+    if position == "K":
+        parsed = table[player_column].astype(str).str.split(r"\s{2,}", regex=True)
+        result = pd.DataFrame({
+            "name": parsed.map(lambda parts: parts[3] if len(parts) >= 6 else ""),
+            "team": parsed.map(lambda parts: parts[5] if len(parts) >= 6 else ""),
+            "position": position,
+            "points": points,
+        })
+    else:
+        names = table[player_column].astype(str).str.strip()
+        result = pd.DataFrame({
+            "name": names,
+            "team": names.map(CBS_DST_CODES).fillna(""),
+            "position": position,
+            "points": points,
+        })
+    return result[(result["name"] != "") & result["points"].notna()].reset_index(drop=True)
+
+
+def combine_supplemental_projections(*frames):
+    combined = pd.concat(frames, ignore_index=True)
+    combined["match_key"] = combined.apply(
+        lambda row: f"{normalize_name(row['name'])}:{normalize_position(row['position'])}", axis=1,
+    )
+    return combined.drop_duplicates("match_key", keep="last").drop(columns="match_key")
 
 
 def add_supplemental_vor_and_rerank(projections, supplemental, baseline=DEFAULT_VOR_BASELINE):
@@ -690,9 +746,10 @@ def run(args):
             rounds=int(dummy.get("rounds", len(league["roster_positions"]))),
             seed=int(dummy.get("seed", 2026)),
         )
-    supplemental = pd.concat([
+    supplemental = combine_supplemental_projections(
+        fetch_cbs_position("K", season), fetch_cbs_position("DST", season),
         fetch_fantasypros_position("K"), fetch_fantasypros_position("DST"),
-    ], ignore_index=True)
+    )
     projections = projection_index(add_supplemental_vor_and_rerank(base, supplemental))
     results, unmatched = build_team_results(
         league=league, rosters=rosters, users=users, picks=picks, projections=projections,
