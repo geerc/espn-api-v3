@@ -693,6 +693,33 @@ def render_report(*, league, results):
     return "\n".join(sections)
 
 
+def render_report_html(*, markdown_content, league, output_path):
+    import markdown
+    from sleeper_rankings.render import CSS
+
+    body = re.sub(r"^\+\+\+\n.*?\n\+\+\+\n", "", markdown_content, count=1, flags=re.DOTALL)
+    report_html = markdown.markdown(body, extensions=["footnotes"])
+    title = f"{league['season']} Post-Draft Rankings"
+    page = f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Post-draft fantasy football rankings for {league['name']}">
+<title>{title}</title><link rel="stylesheet" href="assets/site.css"></head>
+<body><header class="hero"><div class="wrap"><p class="eyebrow">{league['season']} · Draft report</p><h1>{title}</h1><p>{league['name']} · Preseason roster analysis</p></div></header>
+    <main class="wrap report-prose">{report_html}</main></body></html>'''
+    write_report_atomic(output_path, page)
+    assets = output_path.parent / "assets"
+    assets.mkdir(exist_ok=True)
+    write_report_atomic(assets / "site.css", CSS + DRAFT_REPORT_CSS)
+
+
+DRAFT_REPORT_CSS = """
+.report-prose{padding:38px 0 72px}.report-prose>h1{display:none}
+.report-prose>h2{margin-top:50px;border-top:1px solid var(--line);padding-top:32px}
+.report-prose img{width:min(330px,100%);height:auto;display:block;margin:18px auto}
+.report-prose .footnote{font-size:.82rem;color:var(--muted)}
+"""
+
+
 def parse_args(argv=None):
     load_dotenv(LOCAL_ENV_FILE)
     parser = argparse.ArgumentParser(description="Generate a Sleeper post-draft rankings report.")
@@ -768,7 +795,11 @@ def run(args):
     output_dir.mkdir(parents=True, exist_ok=True)
     for result in results:
         render_radar(result, output_dir / f"team-{result['roster_id']}-radar.png")
-    write_report_atomic(output_dir / "index.md", render_report(league=league, results=results))
+    markdown_content = render_report(league=league, results=results)
+    write_report_atomic(output_dir / "index.md", markdown_content)
+    render_report_html(
+        markdown_content=markdown_content, league=league, output_path=output_dir / "index.html",
+    )
     if unmatched:
         print(f"Warning: {len(unmatched)} drafted player(s) had no projection: {', '.join(unmatched)}", file=sys.stderr)
     print(f"Report written to {output_dir / 'index.md'}")

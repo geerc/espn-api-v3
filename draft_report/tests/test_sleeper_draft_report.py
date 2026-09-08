@@ -24,6 +24,7 @@ from draft_report.sleeper_draft_report import (
     pick_summary,
     projection_index,
     render_report,
+    render_report_html,
     response_markdown_with_citations,
 )
 
@@ -294,6 +295,20 @@ def test_report_contains_only_structured_rankings_and_statistics():
     assert pick_summary(item["reach"]) in content
     assert "Position-group rankings:** QB #2, RB #1" in content
     assert "Risky Player (WR): Questionable — Knee" in content
+
+
+def test_report_html_wraps_markdown_and_writes_site_styles(tmp_path):
+    output = tmp_path / "index.html"
+
+    render_report_html(
+        markdown_content="+++\ntitle = \"Draft\"\n+++\n\n# Draft\n\n## #1 Team\n\nAnalysis.",
+        league={"season": "2026", "name": "Test League"}, output_path=output,
+    )
+
+    html = output.read_text()
+    assert "2026 Post-Draft Rankings" in html
+    assert "<h2>#1 Team</h2>" in html
+    assert (tmp_path / "assets/site.css").exists()
 
 
 def test_league_context_distinguishes_best_ball_and_ppr():
