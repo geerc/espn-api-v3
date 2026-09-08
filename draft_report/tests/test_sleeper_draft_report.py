@@ -8,6 +8,7 @@ import draft_report.sleeper_draft_report as draft_report
 from draft_report.sleeper_draft_report import (
     PlayerProjection,
     add_kicker_vor_and_rerank,
+    fantasypros_adp_settings,
     build_team_results,
     combine_supplemental_projections,
     draft_impact_score,
@@ -17,6 +18,7 @@ from draft_report.sleeper_draft_report import (
     commentary_tone,
     league_context,
     normalize_name,
+    overall_pick_from_round_slot,
     player_availability_concern,
     radar_positions_for_league,
     rank_radar_values,
@@ -24,12 +26,13 @@ from draft_report.sleeper_draft_report import (
     pick_summary,
     projection_index,
     render_report,
+    render_report_html,
     response_markdown_with_citations,
 )
 
 
 def player(name, position, points, rank=1):
-    return PlayerProjection(name, position, "NFL", points, points - 100, rank)
+    return PlayerProjection(name, position, "NFL", points, points - 100, rank, float(rank))
 
 
 def test_parse_args_loads_local_environment(monkeypatch, tmp_path):
@@ -116,12 +119,26 @@ def test_supplemental_projections_prefer_later_source_values():
     assert result.loc[result["name"] == "K One", "points"].item() == 145
 
 
+def test_fantasypros_adp_settings_match_superflex_ppr_team_count():
+    settings = fantasypros_adp_settings({
+        "roster_positions": ["QB", "SUPER_FLEX", "BN"],
+        "scoring_settings": {"rec": 1},
+    }, 10)
+
+    assert settings["roster_format"] == "2qb"
+    assert settings["scoring"] == "ppr"
+    assert settings["team_count"] == 10
+    assert settings["url"].endswith("/2qb-ppr-10-teams")
+    assert overall_pick_from_round_slot(2.03, 10) == 13
+    assert overall_pick_from_round_slot(4.0, 10) == 40
+
+
 def test_team_results_are_worst_to_best_and_reach_value_use_actual_pick():
     frame = pd.DataFrame([
-        {"name": "Alpha QB", "team": "BUF", "position": "QB", "points": 300, "points_vor": 10, "rank": 10},
-        {"name": "Alpha RB", "team": "DAL", "position": "RB", "points": 200, "points_vor": 5, "rank": 20},
-        {"name": "Beta QB", "team": "KC", "position": "QB", "points": 350, "points_vor": 30, "rank": 1},
-        {"name": "Beta RB", "team": "SF", "position": "RB", "points": 250, "points_vor": 20, "rank": 2},
+        {"name": "Alpha QB", "team": "BUF", "position": "QB", "points": 300, "points_vor": 10, "rank": 10, "adp": 10},
+        {"name": "Alpha RB", "team": "DAL", "position": "RB", "points": 200, "points_vor": 5, "rank": 20, "adp": 20},
+        {"name": "Beta QB", "team": "KC", "position": "QB", "points": 350, "points_vor": 30, "rank": 1, "adp": 1},
+        {"name": "Beta RB", "team": "SF", "position": "RB", "points": 250, "points_vor": 20, "rank": 2, "adp": 2},
     ])
     picks = [
         {"roster_id": 1, "pick_no": 1, "metadata": {"first_name": "Alpha", "last_name": "QB", "position": "QB"}},
@@ -147,6 +164,7 @@ def test_team_results_are_worst_to_best_and_reach_value_use_actual_pick():
     assert results[0]["reach"][2] == 9
     assert results[0]["value"][1].name == "Alpha RB"
     assert results[0]["value"][2] == 0
+    assert results[0]["projected_points_per_game"] == pytest.approx(500 / 17)
     assert results[0]["roster_construction"] == {"QB": 1, "RB": 1}
     assert results[0]["roster"] == [
         {"name": "Alpha QB", "position": "QB", "season_projection": 300.0},
@@ -161,10 +179,10 @@ def test_draft_impact_score_gives_early_picks_more_weight():
 
 def test_reach_and_value_ignore_final_quarter_of_draft():
     frame = pd.DataFrame([
-        {"name": "Early Reach", "team": "BUF", "position": "QB", "points": 300, "points_vor": 10, "rank": 20},
-        {"name": "Early Value", "team": "DAL", "position": "RB", "points": 200, "points_vor": 5, "rank": 1},
-        {"name": "Late Outlier", "team": "KC", "position": "WR", "points": 100, "points_vor": 1, "rank": 100},
-        {"name": "Other Player", "team": "SF", "position": "TE", "points": 100, "points_vor": 1, "rank": 4},
+        {"name": "Early Reach", "team": "BUF", "position": "QB", "points": 300, "points_vor": 10, "rank": 20, "adp": 20},
+        {"name": "Early Value", "team": "DAL", "position": "RB", "points": 200, "points_vor": 5, "rank": 1, "adp": 1},
+        {"name": "Late Outlier", "team": "KC", "position": "WR", "points": 100, "points_vor": 1, "rank": 100, "adp": 100},
+        {"name": "Other Player", "team": "SF", "position": "TE", "points": 100, "points_vor": 1, "rank": 4, "adp": 4},
     ])
     picks = [
         {"roster_id": 1, "pick_no": 1, "metadata": {"first_name": "Early", "last_name": "Reach", "position": "QB"}},
@@ -196,8 +214,8 @@ def test_player_availability_concern_uses_sleeper_status():
 
 def test_team_results_use_full_sleeper_roster():
     frame = pd.DataFrame([
-        {"name": "Kept QB", "team": "BUF", "position": "QB", "points": 300, "points_vor": 20, "rank": 2},
-        {"name": "Drafted RB", "team": "DAL", "position": "RB", "points": 200, "points_vor": 10, "rank": 10},
+        {"name": "Kept QB", "team": "BUF", "position": "QB", "points": 300, "points_vor": 20, "rank": 2, "adp": 2},
+        {"name": "Drafted RB", "team": "DAL", "position": "RB", "points": 200, "points_vor": 10, "rank": 10, "adp": 10},
     ])
     rosters = [{"roster_id": 1, "owner_id": "a", "players": ["kept", "drafted"]}]
     catalog = {
@@ -281,6 +299,7 @@ def test_radar_omits_kicker_and_defense_when_league_does_not_use_them():
 def test_report_contains_only_structured_rankings_and_statistics():
     item = {
         "rank": 1, "roster_id": 7, "team": "Champions", "projected_points": 1234.56,
+        "projected_points_per_game": 72.621,
         "reach": (3, player("Reach", "WR", 100, rank=12), 9),
         "value": (30, player("Value", "RB", 100, rank=10), -20),
         "position_ranks": {"QB": 2, "RB": 1},
@@ -289,11 +308,25 @@ def test_report_contains_only_structured_rankings_and_statistics():
     content = render_report(league={"season": "2026", "name": "League"}, results=[item])
 
     assert "## #1 Champions" in content
-    assert "Projected starter points:** 1234.6" in content
+    assert "Projected starter points per game:** 72.6" in content
     assert "team-7-radar.png" in content
     assert pick_summary(item["reach"]) in content
     assert "Position-group rankings:** QB #2, RB #1" in content
     assert "Risky Player (WR): Questionable — Knee" in content
+
+
+def test_report_html_wraps_markdown_and_writes_site_styles(tmp_path):
+    output = tmp_path / "index.html"
+
+    render_report_html(
+        markdown_content="+++\ntitle = \"Draft\"\n+++\n\n# Draft\n\n## #1 Team\n\nAnalysis.",
+        league={"season": "2026", "name": "Test League"}, output_path=output,
+    )
+
+    html = output.read_text()
+    assert "2026 Post-Draft Rankings" in html
+    assert "<h2>#1 Team</h2>" in html
+    assert (tmp_path / "assets/site.css").exists()
 
 
 def test_league_context_distinguishes_best_ball_and_ppr():
@@ -335,6 +368,8 @@ def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
         "rank": 2,
         "team_count": 12,
         "projected_points": 1900.25,
+        "projected_points_per_game": 111.779,
+        "adp_settings": {"roster_format": "2qb", "scoring": "ppr", "team_count": 12},
         "roster_construction": {"QB": 2, "RB": 6, "WR": 7, "TE": 2},
         "roster": [{"name": "Example Player", "position": "WR", "season_projection": 200.0}],
         "position_ranks": {"QB": 3, "RB": 8, "K": None},
@@ -360,10 +395,13 @@ def test_ai_commentary_is_opt_in_and_uses_roster_research_context():
     assert statistics["position_ranks"] == {"QB": 3, "RB": 8}
     assert statistics["roster_construction"] == {"QB": 2, "RB": 6, "WR": 7, "TE": 2}
     assert statistics["league_context"]["format"] == "best ball"
+    assert statistics["projected_starter_points_per_game"] == 111.8
+    assert statistics["adp_settings"]["roster_format"] == "2qb"
     assert statistics["editorial_tone"].startswith("strongly positive")
     assert statistics["roster"][0]["name"] == "Example Player"
-    assert "do not recite" in calls[0]["instructions"]
-    assert "a little bombastic" in calls[0]["instructions"]
+    assert "do not recite" in calls[0]["instructions"].lower()
+    assert "informal" in calls[0]["instructions"]
+    assert "never as VOR" in calls[0]["instructions"]
     assert "source of truth" in calls[0]["instructions"]
 
 
@@ -395,6 +433,7 @@ def test_ai_commentary_requires_api_key_without_injected_client():
 def test_report_includes_commentary_only_when_present():
     item = {
         "rank": 1, "roster_id": 7, "team": "Champions", "projected_points": 1234.56,
+        "projected_points_per_game": 72.621,
         "reach": None, "value": None, "commentary": "A concise statistical assessment.",
     }
 

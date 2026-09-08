@@ -29,6 +29,26 @@ def test_archive_preserves_both_weeks_without_network(tmp_path):
     assert (output / "reports/123/2026/week-02/assets/site.css").exists()
 
 
+def test_archive_homepage_includes_draft_report_and_empty_weekly_state(tmp_path):
+    content, output = tmp_path / "content" / "reports", tmp_path / "dist"
+    draft = tmp_path / "content" / "draft-reports" / "123" / "2026" / "post-draft"
+    (draft / "assets").mkdir(parents=True)
+    (draft / "index.html").write_text("<h1>Draft report</h1>")
+    (draft / "assets" / "chart.png").write_bytes(b"png")
+    (draft / "report.json").write_text(json.dumps({
+        "season": "2026", "title": "2026 Post-Draft Rankings", "status": "Draft",
+    }))
+
+    index = build_archive(content, output, {"title": "SYPIP Power Rankings"})
+    homepage = index.read_text()
+
+    assert "Draft reports" in homepage
+    assert "Weekly rankings begin after Week 1" in homepage
+    assert "2026 Post-Draft Rankings" in homepage
+    assert (output / "draft-reports/123/2026/post-draft/index.html").exists()
+    assert (output / "draft-reports/123/2026/post-draft/assets/chart.png").exists()
+
+
 def test_invalid_archive_keys_rejected(tmp_path):
     with pytest.raises(ValueError):
         entry_path(tmp_path, "../bad", "2026", 1)
@@ -52,7 +72,10 @@ def test_archive_only_never_calls_sleeper(tmp_path, monkeypatch):
         raise AssertionError("Production archive build must not fetch data")
     monkeypatch.setattr(cli, "SleeperClient", forbidden)
     args = cli.parser().parse_args(["--archive-only", "--content", str(tmp_path / "empty"), "--output", str(tmp_path / "site")])
-    assert "Something is coming" in cli.run(args).read_text()
+    homepage = cli.run(args).read_text()
+    assert "League report center" in homepage
+    assert "No draft reports are available yet" in homepage
+    assert "Weekly rankings begin after Week 1" in homepage
 
 
 def test_overwrite_requires_week_and_rejects_schedule(monkeypatch):

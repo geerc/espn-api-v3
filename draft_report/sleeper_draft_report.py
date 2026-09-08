@@ -32,7 +32,9 @@ except ImportError:  # Support direct execution from the draft_report directory.
 SLEEPER_API = "https://api.sleeper.app/v1"
 FANTASYPROS_KICKERS = "https://www.fantasypros.com/nfl/projections/k.php?week=draft"
 FANTASYPROS_DEFENSES = "https://www.fantasypros.com/nfl/projections/dst.php?week=draft"
+FANTASYPROS_MOCK_ADP = "https://draftwizard.fantasypros.com/football/adp/mock-drafts/overall/{filters}"
 CBS_PROJECTIONS = "https://www.cbssports.com/fantasy/football/stats/{position}/{season}/restofseason/projections/nonppr/"
+NFL_REGULAR_SEASON_GAMES = 17
 RADAR_POSITIONS = ("QB", "RB", "WR", "TE", "K", "DST")
 FLEX_ELIGIBILITY = {
     "FLEX": {"RB", "WR", "TE"},
@@ -83,6 +85,7 @@ class PlayerProjection:
     points: float
     points_vor: float
     vor_rank: int
+    adp: float = math.nan
 
 
 def api_get(path, *, session=requests):
@@ -174,6 +177,66 @@ def fetch_fantasypros_position(position, *, session=requests):
     return result
 
 
+def fantasypros_adp_settings(league, team_count):
+    roster_positions = [normalize_position(position) for position in league.get("roster_positions", [])]
+    roster_format = "2qb" if "SUPER_FLEX" in roster_positions or roster_positions.count("QB") > 1 else "default"
+    receptions = float((league.get("scoring_settings") or {}).get("rec", 0) or 0)
+    scoring = "ppr" if receptions == 1 else "half" if receptions == 0.5 else "std"
+    supported_team_counts = {4, 6, 8, 10, 12, 14, 16}
+    filters = [roster_format, scoring]
+    if team_count in supported_team_counts:
+        filters.append(f"{team_count}-teams")
+    return {
+        "roster_format": roster_format,
+        "scoring": scoring,
+        "team_count": team_count if team_count in supported_team_counts else None,
+        "url": FANTASYPROS_MOCK_ADP.format(filters="-".join(filters)),
+    }
+
+
+def overall_pick_from_round_slot(value, team_count):
+    round_slot = float(value)
+    round_number = math.floor(round_slot)
+    slot = round((round_slot - round_number) * 100)
+    if slot == 0:
+        slot = team_count
+    return float((round_number - 1) * team_count + slot)
+
+
+def fetch_fantasypros_adp(league, team_count, *, session=requests):
+    settings = fantasypros_adp_settings(league, team_count)
+    response = session.get(settings["url"], timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    response.raise_for_status()
+    table = next(
+        (
+            item for item in pd.read_html(StringIO(response.text))
+            if {"Player", "Avg Pick"}.issubset({str(column) for column in item.columns})
+        ),
+        None,
+    )
+    if table is None:
+        raise ValueError("FantasyPros league-adjusted ADP table was not found")
+    result = pd.DataFrame({
+        "name": table["Player"].astype(str).str.strip(),
+        "position": table["Position"].astype(str).str.extract(r"^([A-Z]+)", expand=False).map(normalize_position),
+        "adp": table["Avg Pick"].map(lambda value: overall_pick_from_round_slot(value, team_count)),
+    })
+    return result.dropna(subset=["name", "position", "adp"]), settings
+
+
+def add_adp_to_projections(projections, adp):
+    result = projections.copy()
+    result["adp_key"] = result.apply(
+        lambda row: f"{normalize_name(row['name'])}:{normalize_position(row['position'])}", axis=1,
+    )
+    adp = adp.copy()
+    adp["adp_key"] = adp.apply(
+        lambda row: f"{normalize_name(row['name'])}:{normalize_position(row['position'])}", axis=1,
+    )
+    adp = adp.drop_duplicates("adp_key", keep="first")[["adp_key", "adp"]]
+    return result.merge(adp, on="adp_key", how="left").drop(columns="adp_key")
+
+
 def fetch_cbs_position(position, season, *, session=requests):
     response = session.get(
         CBS_PROJECTIONS.format(position=position, season=season),
@@ -249,6 +312,7 @@ def projection_index(frame):
         item = PlayerProjection(
             name=str(row.name), position=normalize_position(row.position), team=str(row.team),
             points=float(row.points), points_vor=float(row.points_vor), vor_rank=int(row.rank),
+            adp=float(row.adp) if hasattr(row, "adp") and pd.notna(row.adp) else math.nan,
         )
         index[(normalize_name(item.name), item.position)] = item
         if item.position == "DST" and item.name.lower() in NFL_TEAM_CODES:
@@ -437,14 +501,15 @@ def build_team_results(*, league, rosters, users, picks, projections, player_cat
             if player.position in position_totals:
                 position_totals[player.position] += player.points
         deltas = [
-            (int(pick["pick_no"]), player, player.vor_rank - int(pick["pick_no"]))
+            (int(pick["pick_no"]), player, player.adp - int(pick["pick_no"]))
             for pick, player in drafted
-            if int(pick["pick_no"]) <= reach_value_cutoff
+            if int(pick["pick_no"]) <= reach_value_cutoff and not math.isnan(player.adp)
         ]
         results.append({
             "roster_id": roster_id,
             "team": team_name(roster_id, rosters, users),
             "projected_points": score,
+            "projected_points_per_game": score / NFL_REGULAR_SEASON_GAMES,
             "position_totals": position_totals,
             "roster_construction": dict(sorted(Counter(player.position for player in roster_players).items())),
             "availability_concerns": availability_concerns,
@@ -528,7 +593,7 @@ def pick_summary(item):
     if item is None:
         return "N/A"
     pick_no, player, difference = item
-    return f"{player.name} — pick {pick_no}, VOR rank {player.vor_rank} ({difference:+d})"
+    return f"{player.name} — pick {pick_no}, ADP {player.adp:.1f} ({difference:+.1f})"
 
 
 def position_rank_summary(result):
@@ -599,8 +664,10 @@ def generate_ai_commentary(
             raise ValueError("OPENAI_API_KEY is required when --ai-commentary is enabled")
         client = OpenAI(api_key=api_key)
     instructions = (
-        "Write as an energetic NFL draft commentator analyzing a fantasy football roster after the draft. "
-        "Act as an analyst, not a standings reader: do not recite the projected point total or overall league "
+        "Write as an entertaining fantasy-football fan reacting to a roster after the draft. Use an informal, "
+        "conversational voice—not a formal analyst voice or scouting report. Be playful, opinionated, and willing "
+        "to exaggerate for entertainment: hype up strong teams and roast weak teams, while keeping factual claims "
+        "grounded. Do not recite the projected points per game or overall league "
         "rank, because the report already displays them. Research the roster's players using current, reputable "
         "fantasy football sources such as ESPN, FantasyPros, CBS Sports, and official NFL or team coverage. In "
         "4-6 punchy sentences, explain where the roster construction thrives, where it falls short, and which "
@@ -609,9 +676,11 @@ def generate_ai_commentary(
         "Use overall rank as the source of truth for the analysis's sentiment and follow the supplied editorial "
         "tone: higher-ranked teams should read more positively and lower-ranked teams more critically. Every "
         "team must still receive at least one genuine strength and one genuine concern. Use the projections, "
-        "positional ranks, biggest value, and biggest reach as evidence rather than merely repeating them. Be "
-        "engaging, opinionated, colorful, and a little bombastic—celebrate sharp drafting and "
-        "call out questionable decisions. Distinguish sourced facts from your analysis, never invent facts, and "
+        "positional ranks, biggest value, and biggest reach as evidence rather than merely repeating them. The "
+        "biggest value and biggest reach are calculated from FantasyPros ADP adjusted for this league's team "
+        "count, PPR scoring, and superflex/2-QB roster format; discuss them as ADP values, never as VOR. Be "
+        "engaging, colorful, and bombastic—celebrate sharp drafting like a league-winning heist and roast bad "
+        "decisions like draft-night disasters. Distinguish sourced facts from your analysis, never invent facts, and "
         "cite web-derived claims; the application will format those citations as footnotes at the end of the "
         "team summary. Return prose without a heading or bullet list."
     )
@@ -623,7 +692,8 @@ def generate_ai_commentary(
             "overall_rank": result["rank"],
             "league_size": result["team_count"],
             "editorial_tone": commentary_tone(result["rank"], result["team_count"]),
-            "projected_starter_points": round(result["projected_points"], 1),
+            "projected_starter_points_per_game": round(result["projected_points_per_game"], 1),
+            "adp_settings": result.get("adp_settings", {}),
             "roster_construction": result.get("roster_construction", {}),
             "roster": result.get("roster", []),
             "position_ranks": {
@@ -671,7 +741,7 @@ def render_report(*, league, results):
         image_name = f"team-{result['roster_id']}-radar.png"
         sections.extend([
             f"## #{result['rank']} {result['team']}", "",
-            f"**Projected starter points:** {result['projected_points']:.1f}", "",
+            f"**Projected starter points per game:** {result['projected_points_per_game']:.1f}", "",
             f"![{result['team']} positional strength radar chart]({image_name})", "",
         ])
         if result.get("commentary"):
@@ -691,6 +761,33 @@ def render_report(*, league, results):
                 f"- **Injury/suspension monitor:** {concern_summary}", "",
             ])
     return "\n".join(sections)
+
+
+def render_report_html(*, markdown_content, league, output_path):
+    import markdown
+    from sleeper_rankings.render import CSS
+
+    body = re.sub(r"^\+\+\+\n.*?\n\+\+\+\n", "", markdown_content, count=1, flags=re.DOTALL)
+    report_html = markdown.markdown(body, extensions=["footnotes"])
+    title = f"{league['season']} Post-Draft Rankings"
+    page = f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Post-draft fantasy football rankings for {league['name']}">
+<title>{title}</title><link rel="stylesheet" href="assets/site.css"></head>
+<body><header class="hero"><div class="wrap"><p class="eyebrow">{league['season']} · Draft report</p><h1>{title}</h1><p>{league['name']} · Preseason roster analysis</p></div></header>
+    <main class="wrap report-prose">{report_html}</main></body></html>'''
+    write_report_atomic(output_path, page)
+    assets = output_path.parent / "assets"
+    assets.mkdir(exist_ok=True)
+    write_report_atomic(assets / "site.css", CSS + DRAFT_REPORT_CSS)
+
+
+DRAFT_REPORT_CSS = """
+.report-prose{padding:38px 0 72px}.report-prose>h1{display:none}
+.report-prose>h2{margin-top:50px;border-top:1px solid var(--line);padding-top:32px}
+.report-prose img{width:min(330px,100%);height:auto;display:block;margin:18px auto}
+.report-prose .footnote{font-size:.82rem;color:var(--muted)}
+"""
 
 
 def parse_args(argv=None):
@@ -750,12 +847,16 @@ def run(args):
         fetch_cbs_position("K", season), fetch_cbs_position("DST", season),
         fetch_fantasypros_position("K"), fetch_fantasypros_position("DST"),
     )
-    projections = projection_index(add_supplemental_vor_and_rerank(base, supplemental))
+    adp, adp_settings = fetch_fantasypros_adp(league, len(rosters))
+    projection_frame = add_supplemental_vor_and_rerank(base, supplemental)
+    projections = projection_index(add_adp_to_projections(projection_frame, adp))
     results, unmatched = build_team_results(
         league=league, rosters=rosters, users=users, picks=picks, projections=projections,
         player_catalog=player_catalog,
     )
     rank_radar_values(results, radar_positions_for_league(league["roster_positions"]))
+    for result in results:
+        result["adp_settings"] = adp_settings
     if args.ai_commentary:
         generate_ai_commentary(
             league=league, results=results, api_key=os.getenv("OPENAI_API_KEY"), model=args.ai_model,
@@ -768,7 +869,11 @@ def run(args):
     output_dir.mkdir(parents=True, exist_ok=True)
     for result in results:
         render_radar(result, output_dir / f"team-{result['roster_id']}-radar.png")
-    write_report_atomic(output_dir / "index.md", render_report(league=league, results=results))
+    markdown_content = render_report(league=league, results=results)
+    write_report_atomic(output_dir / "index.md", markdown_content)
+    render_report_html(
+        markdown_content=markdown_content, league=league, output_path=output_dir / "index.html",
+    )
     if unmatched:
         print(f"Warning: {len(unmatched)} drafted player(s) had no projection: {', '.join(unmatched)}", file=sys.stderr)
     print(f"Report written to {output_dir / 'index.md'}")

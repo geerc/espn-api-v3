@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 draft = [
   "lxml>=5,<7",
+  "Markdown>=3.8,<4",
   "matplotlib>=3.8,<4",
 ]
 espn = [
@@ -39,6 +40,7 @@ all = [
   "langchain-core>=0.3,<1",
   "langchain-openai>=0.3,<1",
   "lxml>=5,<7",
+  "Markdown>=3.8,<4",
   "matplotlib>=3.8,<4",
   "scikit-learn>=1.4,<2",
   "tabulate>=0.9,<1",
